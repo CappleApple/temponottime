@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.cappleapple.temponottime.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "AbstractSpellMixin",
+    "AttributeMixin",
+    "InstantManaEffectMixin",
+    "MagicManagerMixin"
+  ],
+  "client": [
+    "ClientMagicDataMixin",
+    "ManaBarOverlayMixin",
+    "SpellBarOverlayMixin",
+    "TooltipsUtilsMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
