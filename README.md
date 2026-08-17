@@ -1,6 +1,6 @@
 # Tempo Not Time
 
-Tempo Not Time is an addon for Iron's Spells 'n Spellbooks on NeoForge 1.21.1. It takes Iron's mana system and flips the spend side into a cooldown economy. You still use Iron's calculated spell costs, cooldowns, equipment attributes, and addon content as the balance source, but instead of spending mana and waiting for it to regen, you're managing cooldown load, charges, and reserve reservation.
+Tempo Not Time is an addon for Iron's Spells 'n Spellbooks on NeoForge 1.21.1. It takes Iron's mana system and changes the spend side into a cooldown economy. You still use Iron's calculated spell costs, cooldowns, equipment attributes, and addon content as the balance source, but instead of spending mana and waiting for it to regen, you're managing cooldown load, charges, and reserve reservation.
 
 Technical mod ID: `temponottime`
 Java namespace: `com.cappleapple.temponottime`
