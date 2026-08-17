@@ -163,6 +163,7 @@ public final class CooldownManager {
 
     public CastDecision canBeginCast(ServerPlayer player, AbstractSpell spell, int spellLevel, CastSource castSource) {
         if (!ServerConfig.enabled() || !manages(castSource)) return CastDecision.allow();
+        if (isFollowupRecast(player, spell)) return CastDecision.allow();
         SpellOverride override = SpellOverrideManager.get(spell.getSpellId());
         boolean chargeGate = ServerConfig.CHARGES_ENABLED.get() && override.chargesAllowed(true)
                 && !(player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CHARGES.get());
@@ -188,6 +189,7 @@ public final class CooldownManager {
 
     public void beginSuccessfulCast(ServerPlayer player, AbstractSpell spell, int spellLevel, CastSource castSource) {
         if (!ServerConfig.enabled() || !manages(castSource)) return;
+        if (isFollowupRecast(player, spell)) return;
         SpellOverride override = SpellOverrideManager.get(spell.getSpellId());
         double cost = castingDraw(player, spell, spellLevel);
         double duration = rechargeDuration(spell, MagicManager.getEffectiveSpellCooldown(spell, player, castSource),
@@ -200,6 +202,8 @@ public final class CooldownManager {
 
     public void commitCast(ServerPlayer player, AbstractSpell spell, int spellLevel, double eventManaCost, CastSource castSource) {
         if (!ServerConfig.enabled() || !manages(castSource)) return;
+        // Iron posts SpellOnCastEvent before decrementing the recast meter, so every follow-up blast is identifiable here.
+        if (isFollowupRecast(player, spell)) return;
         PlayerCooldownData data = data(player);
         if (spell.getSpellId().equals(data.committedCastingSpellId())) return;
 
@@ -426,6 +430,11 @@ public final class CooldownManager {
 
     private static double safeNonNegative(double value) {
         return Double.isFinite(value) ? Math.max(0.0, value) : 0.0;
+    }
+
+    private static boolean isFollowupRecast(ServerPlayer player, AbstractSpell spell) {
+        boolean activeIronRecast = MagicData.getPlayerMagicData(player).getPlayerRecasts().hasRecastForSpell(spell);
+        return !RecastReservationPolicy.consumesTempoUse(activeIronRecast);
     }
 
     public static boolean manages(CastSource castSource) {

@@ -54,6 +54,8 @@ maxCharges = clamp(floor(castingReserve / castingDraw), minimumCharges, maximumC
 
 So a player with 300 Casting Reserve gets five charges off a spell with 60 Casting Draw. Each spent charge owns its own independent recharge instance. Parallel recovery is the default, but sequential per-spell recovery is available if you want it.
 
+Spells using Iron's recast meter consume one Tempo charge and reserve one Casting Draw for the initial activation. Follow-up blasts consume Iron's displayed recast count and do not create additional Tempo recharge instances.
+
 If equipment or effects bump the maximum up, new slots start available immediately. If the maximum drops, existing recovery debt sticks around and available charges clamp to zero until enough instances finish.
 
 ### C: Casting Reserve reservation

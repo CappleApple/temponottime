@@ -10,6 +10,17 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CombinedMechanicsTest {
     @Test
+    void multiBlastRecastsConsumeOnlyOneTempoUse() {
+        boolean[] activeRecastAtCastEvent = {false, true, true, true, true, true, true};
+        int tempoUses = 0;
+        for (boolean activeRecast : activeRecastAtCastEvent) {
+            if (RecastReservationPolicy.consumesTempoUse(activeRecast)) tempoUses++;
+        }
+
+        assertEquals(1, tempoUses, "Only the initial activation may consume a charge or reserve Casting Draw");
+    }
+
+    @Test
     void fiveChargesReserveCapacityIndependently() {
         PlayerCooldownData data = new PlayerCooldownData();
         int maximumCharges = ChargeCalculator.maxCharges(300, 60, 1, 10, 1);

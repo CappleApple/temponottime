@@ -19,6 +19,7 @@ Tempo Not Time targets Iron's Spells 'n Spellbooks `1.21.1-3.16.2`. Integration 
 
 - `SpellPreCastEvent` performs the authoritative charge/Casting Reserve decision while preserving unrelated Iron's validation.
 - `SpellOnCastEvent` commits exactly one cooldown instance for the successful cast and sets event mana cost to zero.
+- Iron's active `PlayerRecasts` entry distinguishes follow-up blasts from a new activation; those blasts bypass Tempo's charge/reserve validation and do not commit additional instances.
 - `SpellCooldownAddedEvent.Post` supplies Iron's final effective cooldown and activates the matching waiting instance.
 - NeoForge player tick/login/logout/clone/respawn/dimension events advance, persist, reconcile, and synchronize replacement state.
 - `EntityAttributeModificationEvent` attaches `temponottime:casting_reserve` to players.
