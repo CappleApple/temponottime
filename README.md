@@ -26,6 +26,8 @@ Cooldown Reduction    -> Cooldown Reduction
 
 Iron's attributes stay intact internally so addons and other mods that read them don't break. Tempo Not Time reads the fully modified player values, gives them new gameplay meaning, bypasses the current-mana gating, prevents mana from actually spending or regenerating, and swaps out the mana HUD presentation while enabled.
 
+While mana-free casting is active, Iron-facing compatibility queries report maximum Casting Reserve as maximum mana and available Casting Reserve as current mana. This keeps third-party HUDs and GUI customization mods accurate, including temporary Instant Mana overcharge, instead of leaving them at `0`. These values are a read-only projection: Tempo's cast validation, charges, Casting Draw, reserve occupancy, and recovery never read the projected mana number.
+
 One edge case: when Casting Reserve is disabled but charges are still enabled, the converted Max Mana and native reserve attribute show up as Charge Capacity since they still factor into how many charges you get.
 
 ## Casting mechanics
@@ -46,13 +48,15 @@ loadMultiplier = max(minimumRecoveryMultiplier,
 
 ### B: Spell charges
 
-Max charges come straight from the player's effective Casting Reserve divided by the spell's Casting Draw:
+By default, each numbered charge has a geometric Casting Reserve unlock threshold. The first charge requires one Casting Draw of reserve, and the threshold doubles for each subsequent charge:
 
 ```text
-maxCharges = clamp(floor(castingReserve / castingDraw), minimumCharges, maximumCharges)
+reserve threshold for charge N = castingDraw * 2^(N - 1)
 ```
 
-So a player with 300 Casting Reserve gets five charges off a spell with 60 Casting Draw. Each spent charge owns its own independent recharge instance. Parallel recovery is the default, but sequential per-spell recovery is available if you want it.
+This is not a cumulative price: a spell with 20 Casting Draw has charge thresholds of 20, 40, 80, and 160 Casting Reserve. A player at those thresholds gets one, two, three, and four charges respectively. Likewise, 300 Casting Reserve gives three charges for a spell with 60 Casting Draw because its thresholds are 60, 120, and 240; the fourth needs 480. This scaling affects only how many charges are unlocked. Firing any charge still occupies exactly one normal Casting Draw and creates one normal recharge instance. Sequential per-spell recovery is the default, while parallel recovery remains available through the server config.
+
+The server config exposes this threshold as a restricted math expression. Its generated comments include the original linear equation, the cumulative-doubling alternative, and the default doubling-threshold equation so pack authors can switch between all three or write their own safe curve.
 
 Spells using Iron's recast meter consume one Tempo charge and reserve one Casting Draw for the initial activation. Follow-up blasts consume Iron's displayed recast count and do not create additional Tempo recharge instances.
 
@@ -110,7 +114,8 @@ Key server settings:
 - `casting_reserve.minimum_casting_reserve`, `casting_reserve.maximum_casting_reserve`: effective reserve bounds.
 - `casting_reserve.allow_overreserve_single_cast`: allow one oversized draw only when no reserve is currently occupied.
 - `casting_reserve.zero_mana_spell_casting_draw`: finite fallback for zero/negative/invalid draws.
-- `charges.enabled`, `minimum_charges`, `maximum_charges`, `recovery_mode`.
+- `charges.enabled`, `minimum_charges`, `maximum_charges`, `recovery_mode` (`SEQUENTIAL` by default, with `PARALLEL` available).
+- `charges.casting_reserve_requirement_formula`: reserve threshold for numbered charge slots. Examples: original linear `casting_draw * charge`; cumulative doubling `casting_draw * (2 ^ charge - 1)`; default doubling threshold `casting_draw * 2 ^ (charge - 1)`.
 - `cooldown_load.enabled`, `free_cooldowns`, `penalty_per_additional_cooldown`, `minimum_recovery_multiplier`, `count_per_charge`.
 - `casting_recovery.casting_regeneration_to_recovery_multiplier`, `casting_recovery.maximum_total_recovery_multiplier`.
 - `recharge_normalization.enabled`, `normal_recharge_seconds`, `short_recharge_strength`, `long_recharge_strength`, `normalization_spread`.
@@ -192,6 +197,7 @@ Server stays authoritative after event adjustments and clamps invalid values def
 
 - Built-in and addon spells derive from their actual `AbstractSpell` mana cost and Iron's effective cooldown, no per-spell compatibility table.
 - Effective Max Mana and Mana Regeneration automatically include equipment, curios, effects, upgrade modifiers, commands, and compatible third-party modifiers.
+- Iron's server `MagicData` current-mana query and client `ClientMagicData`/local-player Max Mana queries expose the synchronized reserve projection for compatibility. Server integrations can query exact reserve values directly through `TempoNotTimeApi`.
 - Spellbook and sword player casts are managed. Scroll and mob casts keep Iron's own source-specific behavior.
 - Current integration target is Iron's 1.21.1-3.16.2. Exact source hooks and rationale are in `docs/IRONS_INTEGRATION.md`.
 
@@ -207,4 +213,4 @@ Release and sources JARs land in `build/libs/`. `runClient` and `runServer` for 
 
 ## License
 
-Repo currently uses the license terms in `LICENSE`. JAR metadata reports `All Rights Reserved`.
+Tempo Not Time is published under the MIT License. See `LICENSE` for the full terms.

@@ -48,8 +48,10 @@ import java.util.UUID;
 public final class CooldownManager {
     public static final CooldownManager INSTANCE = new CooldownManager();
     private static final int PROGRESS_SYNC_INTERVAL = 10;
+    private static final int MANA_COMPATIBILITY_SYNC_INTERVAL = 10;
 
     private final Map<UUID, Long> lastFeedbackTicks = new HashMap<>();
+    private final Map<UUID, ManaCompatibilityValues.Snapshot> lastManaCompatibilityValues = new HashMap<>();
 
     private CooldownManager() {
     }
@@ -97,7 +99,8 @@ public final class CooldownManager {
         boolean enabled = ServerConfig.CHARGES_ENABLED.get() && override.chargesAllowed(true);
         int calculated = enabled
                 ? ChargeCalculator.maxCharges(maximumCastingReserve(player), castingDraw(player, spell, spellLevel),
-                ServerConfig.MINIMUM_CHARGES.get(), ServerConfig.MAXIMUM_CHARGES.get(), ServerConfig.ZERO_MANA_SPELL_CAPACITY_COST.get())
+                ServerConfig.MINIMUM_CHARGES.get(), ServerConfig.MAXIMUM_CHARGES.get(),
+                ServerConfig.ZERO_MANA_SPELL_CAPACITY_COST.get(), ServerConfig.CHARGE_REQUIREMENT_FORMULA.get())
                 : 1;
         if (enabled && override.maxCharges() != null) {
             calculated = Math.clamp(override.maxCharges(), ServerConfig.MINIMUM_CHARGES.get(), ServerConfig.MAXIMUM_CHARGES.get());
@@ -124,8 +127,12 @@ public final class CooldownManager {
     }
 
     public double freeCastingReserve(Player player) {
-        return CapacityCalculator.free(maximumCastingReserve(player) + data(player).castingReserveCredit(),
-                usedCastingReserve(player));
+        return manaCompatibility(player).current();
+    }
+
+    public ManaCompatibilityValues.Snapshot manaCompatibility(Player player) {
+        return ManaCompatibilityValues.snapshot(maximumCastingReserve(player), usedCastingReserve(player),
+                data(player).castingReserveCredit());
     }
 
     public void rechargeCastingReserve(ServerPlayer player, double amount) {
@@ -303,8 +310,11 @@ public final class CooldownManager {
         reconcileChargeMode(data);
         activateOrphanedWaitingInstances(player, data, magicData);
         boolean completed = advanceCooldowns(player, data);
+        boolean manaCompatibilityChanged = player.tickCount % MANA_COMPATIBILITY_SYNC_INTERVAL == 0
+                && manaCompatibilityChanged(player);
 
-        if (completed || data.isDirty() || (!data.allInstances().isEmpty() && player.tickCount % PROGRESS_SYNC_INTERVAL == 0)) {
+        if (completed || data.isDirty() || manaCompatibilityChanged
+                || (!data.allInstances().isEmpty() && player.tickCount % PROGRESS_SYNC_INTERVAL == 0)) {
             sync(player);
         }
     }
@@ -338,6 +348,7 @@ public final class CooldownManager {
     @SubscribeEvent
     public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         lastFeedbackTicks.remove(event.getEntity().getUUID());
+        lastManaCompatibilityValues.remove(event.getEntity().getUUID());
     }
 
     @SubscribeEvent
@@ -362,6 +373,7 @@ public final class CooldownManager {
     public void sync(ServerPlayer player) {
         data(player).markClean();
         TempoNetwork.sync(player);
+        rememberManaCompatibility(player);
     }
 
     private void reconcileChargeMode(PlayerCooldownData data) {
@@ -426,6 +438,25 @@ public final class CooldownManager {
                 ? "message.temponottime.reservation_denied"
                 : "message.temponottime.no_charges";
         player.displayClientMessage(Component.translatable(key).withStyle(ChatFormatting.RED), true);
+    }
+
+    private boolean manaCompatibilityChanged(ServerPlayer player) {
+        if (!manaCompatibilityActive()) {
+            return lastManaCompatibilityValues.remove(player.getUUID()) != null;
+        }
+        return !manaCompatibility(player).approximatelyEquals(lastManaCompatibilityValues.get(player.getUUID()));
+    }
+
+    private void rememberManaCompatibility(ServerPlayer player) {
+        if (manaCompatibilityActive()) {
+            lastManaCompatibilityValues.put(player.getUUID(), manaCompatibility(player));
+        } else {
+            lastManaCompatibilityValues.remove(player.getUUID());
+        }
+    }
+
+    private static boolean manaCompatibilityActive() {
+        return ServerConfig.enabled() && ServerConfig.DISABLE_MANA_CONSUMPTION.get();
     }
 
     private static double safeNonNegative(double value) {

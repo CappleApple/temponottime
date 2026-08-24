@@ -7,10 +7,12 @@
     "AbstractSpellMixin",
     "AttributeMixin",
     "InstantManaEffectMixin",
+    "MagicDataMixin",
     "MagicManagerMixin"
   ],
   "client": [
     "ClientMagicDataMixin",
+    "LivingEntityClientMixin",
     "ManaBarOverlayMixin",
     "SpellBarOverlayMixin",
     "TooltipsUtilsMixin"

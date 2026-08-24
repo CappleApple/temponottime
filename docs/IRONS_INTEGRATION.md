@@ -13,7 +13,7 @@ Tempo Not Time targets Iron's Spells 'n Spellbooks `1.21.1-3.16.2`. Integration 
 - Selection and HUD: `api.magic.SpellSelectionManager`, `player.ClientMagicData`, `gui.overlays.ManaBarOverlay`, and Iron's spell-bar renderer provide selected spell and cooldown presentation.
 - Tooltips: `util.TooltipsUtils.getSpellManaCostComponent` creates player-visible spell mana-cost text. Attribute modifier text uses each `Attribute` description ID.
 - Instant Mana: `effect.InstantManaEffect.applyInstantenousEffect` calculates `25 * level + 5% * level` of effective Max Mana before applying Iron's normal mana clamp.
-- Networking: Iron's payloads sync mana/casting/cooldown state. Tempo Not Time adds only its replacement state and does not accept a gameplay payload from clients.
+- Networking: Iron's payloads sync mana/casting/cooldown state. Tempo Not Time adds only its replacement state, uses that snapshot for Iron-facing HUD compatibility values, and does not accept a gameplay payload from clients.
 
 ## Public hooks used
 
@@ -42,6 +42,10 @@ The public events do not cover every required decision or presentation point. Al
 - Cancels `regenPlayerMana` while mana gameplay is disabled. There is no public cancellable regeneration event, and repeatedly refilling/draining mana would be a more invasive hidden-resource hack.
 - Redirects the one `MagicData.getMana` used by Iron's continuous-cast termination condition. Without this hook, a valid zero-mana continuous spell would stop early despite passing initial validation.
 
+### `MagicDataMixin`
+
+Reports available Casting Reserve from Iron's public server-side `MagicData.getMana` query while mana-free casting is active. A re-entry guard prevents compatibility listeners from recursively recalculating reserve. This is a read-only projection; Tempo's authoritative cast and recovery paths never consume the reported value.
+
 ### `InstantManaEffectMixin`
 
 Runs after Iron's Instant Mana effect and grants the server-owned Casting Reserve credit by the same raw recovery amount. Credit can refill occupied reserve and can exceed the ordinary maximum by at most the latest single dose; later Casting Draw consumes that credit first.
@@ -55,10 +59,11 @@ Replaces description IDs only for Iron's `MAX_MANA` and `MANA_REGEN` attribute o
 - `ManaBarOverlayMixin` replaces Iron's mana values with available Casting Reserve while reusing Iron's texture and reading its display mode, anchor, bar offsets, numerical-text toggle, and text offsets directly from Iron's client config. Contextual visibility uses reserve fullness in place of mana fullness.
 - `SpellBarOverlayMixin` renders authoritative available-charge counts on Iron's calculated spell icons and suppresses counts of zero or one.
 - `TooltipsUtilsMixin` replaces Iron's spell mana-cost component with the localized Casting Draw component and redirects scroll cooldown formatting through the server-synchronized recharge-normalization curve.
-- `ClientMagicDataMixin` supplies the next recovering charge's cooldown percentage to Iron's existing spell HUD, including between usable charges.
+- `ClientMagicDataMixin` supplies available Casting Reserve through Iron's public current-mana query and the next recovering charge's cooldown percentage to Iron's existing spell HUD, including between usable charges.
+- `LivingEntityClientMixin` reports synchronized maximum Casting Reserve when a client HUD asks the local player for Iron's Max Mana attribute. Server attribute math remains untouched.
 
 ## State ownership
 
 Iron's remains authoritative for spell definitions, cast time, spell-specific checks, selection, recasts, calculated mana cost, native cooldown reduction, and actual spell effects. Tempo Not Time owns only its versioned recharge instances, charge/reserve gates, normalized base recharge, converted Casting Recovery rate, persistence, and display snapshot.
 
-The bridge never scans the item registry, rewrites Item instances, copies third-party attribute modifiers, or modifies Iron's saved mana capability format.
+The bridge never scans the item registry, rewrites Item instances, copies third-party attribute modifiers, or modifies Iron's saved mana capability format. Compatibility mana is derived from synchronized Tempo state and cannot authorize a cast.

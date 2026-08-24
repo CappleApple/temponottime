@@ -9,11 +9,44 @@ import static org.junit.jupiter.api.Assertions.*;
 class CastingCalculationsTest {
     @Test
     void calculatesChargesAndClampsEdgeCases() {
-        assertEquals(5, ChargeCalculator.maxCharges(300, 60, 1, 10, 1));
-        assertEquals(3, ChargeCalculator.maxCharges(300, 100, 1, 10, 1));
+        assertEquals(3, ChargeCalculator.maxCharges(300, 60, 1, 10, 1));
+        assertEquals(2, ChargeCalculator.maxCharges(300, 100, 1, 10, 1));
         assertEquals(1, ChargeCalculator.maxCharges(300, 500, 1, 10, 1));
-        assertEquals(10, ChargeCalculator.maxCharges(300, 0, 1, 10, 1));
+        assertEquals(9, ChargeCalculator.maxCharges(300, 0, 1, 10, 1));
         assertEquals(4, ChargeCalculator.maxCharges(10_000, 1, 1, 4, 1));
+
+        assertEquals(1, ChargeCalculator.maxCharges(119.99, 60, 1, 10, 1));
+        assertEquals(2, ChargeCalculator.maxCharges(120, 60, 1, 10, 1));
+        assertEquals(2, ChargeCalculator.maxCharges(239.99, 60, 1, 10, 1));
+        assertEquals(3, ChargeCalculator.maxCharges(240, 60, 1, 10, 1));
+        assertEquals(3, ChargeCalculator.maxCharges(0, 60, 3, 10, 1));
+    }
+
+    @Test
+    void supportsConfigurableChargeRequirementEquations() {
+        String desired = "casting_draw * 2 ^ (charge - 1)";
+        assertEquals(1, ChargeCalculator.maxCharges(20, 20, 1, 10, 1, desired));
+        assertEquals(2, ChargeCalculator.maxCharges(40, 20, 1, 10, 1, desired));
+        assertEquals(3, ChargeCalculator.maxCharges(80, 20, 1, 10, 1, desired));
+        assertEquals(4, ChargeCalculator.maxCharges(160, 20, 1, 10, 1, desired));
+
+        assertEquals(5, ChargeCalculator.maxCharges(300, 60, 1, 10, 1,
+                "casting_draw * charge"));
+        assertEquals(2, ChargeCalculator.maxCharges(300, 60, 1, 10, 1,
+                "casting_draw * (2 ^ charge - 1)"));
+        assertEquals(3, ChargeCalculator.maxCharges(300, 60, 1, 10, 1,
+                "casting_draw / charge"), "A decreasing formula must safely fall back to the default");
+    }
+
+    @Test
+    void safelyParsesChargeRequirementExpressions() {
+        ChargeRequirementFormula.Compiled formula = ChargeRequirementFormula.compile(
+                "max(casting_draw, pow(2, charge - 1) * casting_draw)");
+        assertEquals(160.0, formula.evaluate(500, 20, 4), 1.0e-9);
+        assertTrue(ChargeRequirementFormula.isValidConfigValue("casting_draw * charge"));
+        assertFalse(ChargeRequirementFormula.isValidConfigValue("casting_draw * system(charge)"));
+        assertFalse(ChargeRequirementFormula.isValidConfigValue("casting_draw * (charge"));
+        assertFalse(ChargeRequirementFormula.isValidConfigValue(""));
     }
 
     @Test

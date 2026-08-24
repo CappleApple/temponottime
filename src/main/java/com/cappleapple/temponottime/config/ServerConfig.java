@@ -1,5 +1,6 @@
 package com.cappleapple.temponottime.config;
 
+import com.cappleapple.temponottime.casting.ChargeRequirementFormula;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 public final class ServerConfig {
@@ -32,6 +33,7 @@ public final class ServerConfig {
     public static final ModConfigSpec.DoubleValue ZERO_MANA_SPELL_CAPACITY_COST;
 
     public static final ModConfigSpec.BooleanValue CHARGES_ENABLED;
+    public static final ModConfigSpec.ConfigValue<String> CHARGE_REQUIREMENT_FORMULA;
     public static final ModConfigSpec.IntValue MINIMUM_CHARGES;
     public static final ModConfigSpec.IntValue MAXIMUM_CHARGES;
     public static final ModConfigSpec.EnumValue<RecoveryMode> RECOVERY_MODE;
@@ -93,12 +95,22 @@ public final class ServerConfig {
         builder.push("charges");
         CHARGES_ENABLED = builder.comment("Enable charges feature true/false.")
                 .define("enabled", true);
+        CHARGE_REQUIREMENT_FORMULA = builder.comment(
+                        "Formula returning the total Casting Reserve required to unlock charge number 'charge'.",
+                        "Available variables: casting_draw, casting_reserve, charge. Operators: +, -, *, /, %, ^, and parentheses.",
+                        "Available functions: pow, min, max, abs, sqrt, floor, ceil, log, log2.",
+                        "The result must be finite, positive, and increase for every subsequent charge.",
+                        "Original linear behavior: casting_draw * charge",
+                        "Cumulative doubling behavior: casting_draw * (2 ^ charge - 1)",
+                        "Default doubling-threshold behavior: casting_draw * 2 ^ (charge - 1)")
+                .define("casting_reserve_requirement_formula", ChargeRequirementFormula.DEFAULT_EXPRESSION,
+                        ChargeRequirementFormula::isValidConfigValue);
         MINIMUM_CHARGES = builder.comment("Global lower charge clamp.")
                 .defineInRange("minimum_charges", 1, 1, 10_000);
         MAXIMUM_CHARGES = builder.comment("Global upper charge clamp.")
                 .defineInRange("maximum_charges", 10, 1, 10_000);
-        RECOVERY_MODE = builder.comment("PARALLEL recovers every spent charge at once; SEQUENTIAL recovers one per spell at a time.")
-                .defineEnum("recovery_mode", RecoveryMode.PARALLEL);
+        RECOVERY_MODE = builder.comment("SEQUENTIAL recovers one spent charge per spell at a time and is the default; PARALLEL recovers every spent charge at once.")
+                .defineEnum("recovery_mode", RecoveryMode.SEQUENTIAL);
         builder.pop();
 
         builder.push("cooldown_load");

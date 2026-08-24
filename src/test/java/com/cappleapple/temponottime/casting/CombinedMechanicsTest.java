@@ -21,9 +21,9 @@ class CombinedMechanicsTest {
     }
 
     @Test
-    void fiveChargesReserveCapacityIndependently() {
+    void fiveChargesUseGeometricUnlockBudgetButFlatCastingDraw() {
         PlayerCooldownData data = new PlayerCooldownData();
-        int maximumCharges = ChargeCalculator.maxCharges(300, 60, 1, 10, 1);
+        int maximumCharges = ChargeCalculator.maxCharges(960, 60, 1, 10, 1);
         assertEquals(5, maximumCharges);
 
         for (int i = 0; i < 3; i++) {
@@ -37,7 +37,8 @@ class CombinedMechanicsTest {
         }
         assertEquals(0, maximumCharges - data.forSpell("irons_spellbooks:fireball").size());
         assertEquals(300, used(data));
-        assertFalse(CapacityCalculator.canReserve(300, used(data), 60, false));
+        assertTrue(CapacityCalculator.canReserve(960, used(data), 60, false),
+                "Unlocking later charges must not increase the Casting Draw reserved by each cast");
 
         data.forSpell("irons_spellbooks:fireball").removeFirst();
         assertEquals(1, maximumCharges - data.forSpell("irons_spellbooks:fireball").size());
