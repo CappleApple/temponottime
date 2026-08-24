@@ -1,7 +1,9 @@
 package com.cappleapple.temponottime.mixin;
 
+import com.cappleapple.temponottime.client.QuickCastHudSlots;
 import com.cappleapple.temponottime.config.ClientConfig;
 import com.cappleapple.temponottime.network.ClientCooldownState;
+import io.redspace.ironsspellbooks.api.magic.SpellSelectionManager;
 import io.redspace.ironsspellbooks.config.ClientConfigs;
 import io.redspace.ironsspellbooks.gui.overlays.SpellBarOverlay;
 import io.redspace.ironsspellbooks.player.ClientMagicData;
@@ -14,12 +16,41 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.List;
 
 @Mixin(value = SpellBarOverlay.class, remap = false)
 public abstract class SpellBarOverlayMixin {
     @Shadow
     private static float alpha;
+
+    @Redirect(method = "render", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/magic/SpellSelectionManager;getSpellCount()I"))
+    private int temponottime$getVisibleSpellCount(SpellSelectionManager spellSelection) {
+        return QuickCastHudSlots.visibleSpellCount(spellSelection);
+    }
+
+    @Redirect(method = "render", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/player/ClientRenderCache;generateRelativeLocations(Lio/redspace/ironsspellbooks/api/magic/SpellSelectionManager;II)V"))
+    private void temponottime$generateVisibleSlotLocations(SpellSelectionManager spellSelection,
+                                                          int horizontalSpacing, int verticalSpacing) {
+        QuickCastHudSlots.generateRelativeLocations(spellSelection, horizontalSpacing, verticalSpacing);
+    }
+
+    @Redirect(method = "render", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/magic/SpellSelectionManager;getAllSpells()Ljava/util/List;"))
+    private List<SpellSelectionManager.SelectionOption> temponottime$getVisibleSpells(
+            SpellSelectionManager spellSelection) {
+        return QuickCastHudSlots.visibleSelections(spellSelection);
+    }
+
+    @Redirect(method = "render", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/magic/SpellSelectionManager;getGlobalSelectionIndex()I"))
+    private int temponottime$getVisibleSelectionIndex(SpellSelectionManager spellSelection) {
+        return QuickCastHudSlots.visibleSelectionIndex(spellSelection);
+    }
 
     @Inject(method = "render", at = @At(value = "INVOKE",
             target = "Lio/redspace/ironsspellbooks/gui/overlays/SpellBarOverlay;flushTranslucency()V",
@@ -32,8 +63,9 @@ public abstract class SpellBarOverlayMixin {
 
         Minecraft minecraft = Minecraft.getInstance();
         var spellSelection = ClientMagicData.getSpellSelectionManager();
+        var visibleSpells = QuickCastHudSlots.visibleSelections(spellSelection);
         var locations = ClientRenderCache.relativeSpellBarSlotLocations;
-        int spellCount = Math.min(spellSelection.getSpellCount(), locations.size());
+        int spellCount = Math.min(visibleSpells.size(), locations.size());
         if (minecraft.player == null || spellCount == 0) {
             return;
         }
@@ -63,7 +95,7 @@ public abstract class SpellBarOverlayMixin {
         int opacity = Math.round(Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F);
         int color = opacity << 24 | 0xFFFFFF;
         for (int index = 0; index < spellCount; index++) {
-            var spell = spellSelection.getSpellData(index).getSpell();
+            var spell = visibleSpells.get(index).spellData.getSpell();
             var state = ClientCooldownState.spells().get(spell.getSpellId());
             if (state == null || state.availableCharges() <= 1) {
                 continue;

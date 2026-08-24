@@ -121,7 +121,7 @@ Key server settings:
 - `recharge_normalization.enabled`, `normal_recharge_seconds`, `short_recharge_strength`, `long_recharge_strength`, `normalization_spread`.
 - `diagnostics.debug_logging`: state-transition logging only, never per-tick.
 
-Client config handles per-slot charge numbers. The Casting Reserve bar reads Iron's mana-bar display settings (anchor, bar offsets, numerical toggle, text offsets) directly from `irons_spellbooks-client.toml`.
+Client config handles per-slot charge numbers and the off-by-default `hud.only_show_bound_quick_cast_slots` spell-bar filter. The filter compacts the HUD to slots whose matching Iron's quick cast keybinding is bound. The Casting Reserve bar reads Iron's mana-bar display settings (anchor, bar offsets, numerical toggle, text offsets) directly from `irons_spellbooks-client.toml`.
 
 The native synchronized attribute:
 
@@ -153,6 +153,7 @@ Invalid files keep the last valid override set and log a clear error rather than
 ## HUD and feedback
 
 - Iron's mana bar becomes the Casting Reserve meter while server-side mana suppression is active. Display mode, anchor, offsets, and text settings all read from Iron's client config. Bar and plain `available/max` display show full at zero occupied reserve and drain as reserve gets occupied. Iron's contextual mode hides the full bar unless a magic item is held.
+- The optional quick-cast HUD filter hides unbound spell slots and compacts the remaining bound slots without changing their quick-cast indices.
 - Spell-bar slots show the available charge count on the icon, but only when more than one charge is ready.
 - Iron's normal cooldown shading tracks the next returning charge's progress, even while other charges are still usable.
 - Scroll tooltips show the normalized effective recharge duration including Iron's cooldown-reduction ratio, using the server's synchronized normalization settings.

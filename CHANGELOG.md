@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.5 - 2026-08-24
+
+### Added
+
+- An off-by-default client option can limit the spell-bar HUD to slots with a bound Iron's quick cast keybinding.
+
 ## 1.2.4 - 2026-08-23
 
 ### Added
