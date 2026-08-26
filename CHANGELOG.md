@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.6 - 2026-08-26
+
+### Added
+
+- The inscription table now has an icon toggle for showing only bound quick cast slots, with colored On and grayscale Off states.
+- Simply Swords weapon mana costs now use Casting Reserve affordability, Casting Draw, recharge duration, Instant Mana credit, and cooldown load while Tempo's mana replacement is active.
+
 ## 1.2.5 - 2026-08-24
 
 ### Added

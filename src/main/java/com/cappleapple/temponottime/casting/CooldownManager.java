@@ -8,6 +8,7 @@ import com.cappleapple.temponottime.api.event.SpellCastReservationEvent;
 import com.cappleapple.temponottime.config.ServerConfig;
 import com.cappleapple.temponottime.config.SpellOverride;
 import com.cappleapple.temponottime.config.SpellOverrideManager;
+import com.cappleapple.temponottime.compat.SimplySwordsManaCompatibility;
 import com.cappleapple.temponottime.data.CooldownInstance;
 import com.cappleapple.temponottime.data.PendingCast;
 import com.cappleapple.temponottime.data.PlayerCooldownData;
@@ -25,9 +26,11 @@ import io.redspace.ironsspellbooks.api.spells.CastSource;
 import io.redspace.ironsspellbooks.api.spells.SpellData;
 import io.redspace.ironsspellbooks.capabilities.magic.MagicManager;
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
@@ -133,6 +136,69 @@ public final class CooldownManager {
     public ManaCompatibilityValues.Snapshot manaCompatibility(Player player) {
         return ManaCompatibilityValues.snapshot(maximumCastingReserve(player), usedCastingReserve(player),
                 data(player).castingReserveCredit());
+    }
+
+    public boolean canSpendExternalMana(ServerPlayer player, double manaCost) {
+        if (!manaCompatibilityActive() || !Double.isFinite(manaCost) || manaCost <= 0.0) {
+            return true;
+        }
+        double draw = ExternalManaPolicy.castingDraw(manaCost,
+                ServerConfig.MANA_COST_TO_CAPACITY_COST_MULTIPLIER.get());
+        boolean bypassesCapacity = player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CAPACITY.get();
+        boolean allowed = ExternalManaPolicy.canAfford(ServerConfig.CAPACITY_ENABLED.get(), bypassesCapacity,
+                maximumCastingReserve(player), usedCastingReserve(player), data(player).castingReserveCredit(), draw,
+                ServerConfig.ALLOW_OVERCAPACITY_SINGLE_CAST.get());
+        if (!allowed) {
+            showRejection(player, CastDecision.Failure.NO_CAPACITY);
+        }
+        return allowed;
+    }
+
+    public long commitExternalManaUse(ServerPlayer player, Item sourceItem, double manaCost,
+                                      double effectiveCooldownTicks) {
+        if (!manaCompatibilityActive() || !Double.isFinite(manaCost) || manaCost <= 0.0) {
+            return -1L;
+        }
+        double draw = ExternalManaPolicy.castingDraw(manaCost,
+                ServerConfig.MANA_COST_TO_CAPACITY_COST_MULTIPLIER.get());
+        boolean reserveApplies = ServerConfig.CAPACITY_ENABLED.get()
+                && !(player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CAPACITY.get());
+        double reservedDraw = reserveApplies ? data(player).consumeCastingReserveCredit(draw) : draw;
+        double duration = ExternalManaPolicy.rechargeDuration(effectiveCooldownTicks,
+                ServerConfig.RECHARGE_NORMALIZATION_ENABLED.get(), ServerConfig.NORMAL_RECHARGE_SECONDS.get(),
+                ServerConfig.SHORT_RECHARGE_STRENGTH.get(), ServerConfig.LONG_RECHARGE_STRENGTH.get(),
+                ServerConfig.NORMALIZATION_SPREAD.get());
+        String source = sourceItem == null ? "unknown" : BuiltInRegistries.ITEM.getKey(sourceItem).toString();
+        String cooldownId = SimplySwordsManaCompatibility.COOLDOWN_PREFIX + source;
+        CooldownInstance instance = data(player).add(cooldownId, 1, reservedDraw, duration,
+                false, true, true);
+        if (ServerConfig.DEBUG_LOGGING.get()) {
+            TempoNotTime.LOGGER.info("Committed Simply Swords recharge for {}: source={}, castingDraw={}, duration={}",
+                    player.getGameProfile().getName(), source, draw, duration);
+        }
+        sync(player);
+        return instance.id();
+    }
+
+    public void retimeExternalManaUse(ServerPlayer player, Item sourceItem, long instanceId,
+                                      double effectiveCooldownTicks) {
+        if (!manaCompatibilityActive() || sourceItem == null || instanceId < 0L) {
+            return;
+        }
+        double duration = ExternalManaPolicy.rechargeDuration(effectiveCooldownTicks,
+                ServerConfig.RECHARGE_NORMALIZATION_ENABLED.get(), ServerConfig.NORMAL_RECHARGE_SECONDS.get(),
+                ServerConfig.SHORT_RECHARGE_STRENGTH.get(), ServerConfig.LONG_RECHARGE_STRENGTH.get(),
+                ServerConfig.NORMALIZATION_SPREAD.get());
+        String cooldownId = SimplySwordsManaCompatibility.COOLDOWN_PREFIX
+                + BuiltInRegistries.ITEM.getKey(sourceItem);
+        data(player).forSpell(cooldownId).stream()
+                .filter(instance -> instance.id() == instanceId)
+                .findFirst()
+                .ifPresent(instance -> {
+                    instance.activate(duration);
+                    data(player).markDirty();
+                    sync(player);
+                });
     }
 
     public void rechargeCastingReserve(ServerPlayer player, double amount) {
@@ -349,6 +415,9 @@ public final class CooldownManager {
     public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         lastFeedbackTicks.remove(event.getEntity().getUUID());
         lastManaCompatibilityValues.remove(event.getEntity().getUUID());
+        if (event.getEntity() instanceof ServerPlayer player) {
+            SimplySwordsManaCompatibility.clear(player);
+        }
     }
 
     @SubscribeEvent
@@ -455,7 +524,7 @@ public final class CooldownManager {
         }
     }
 
-    private static boolean manaCompatibilityActive() {
+    public boolean manaCompatibilityActive() {
         return ServerConfig.enabled() && ServerConfig.DISABLE_MANA_CONSUMPTION.get();
     }
 

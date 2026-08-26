@@ -7,11 +7,16 @@
     "AbstractSpellMixin",
     "AttributeMixin",
     "InstantManaEffectMixin",
+    "ItemCooldownsMixin",
     "MagicDataMixin",
-    "MagicManagerMixin"
+    "MagicManagerMixin",
+    "SimplySwordsApiMixin",
+    "SimplySwordsForgeHelperMixin",
+    "SimplySwordsWeaponManaCostMixin"
   ],
   "client": [
     "ClientMagicDataMixin",
+    "InscriptionTableScreenMixin",
     "LivingEntityClientMixin",
     "ManaBarOverlayMixin",
     "SpellBarOverlayMixin",

@@ -10,17 +10,20 @@ Iron's existing spell costs, cooldowns, equipment bonuses, and addon content sti
 * NeoForge 21.1.200 or newer compatible 21.1.x version
 * Iron's Spells 'n Spellbooks 1.21.1-3.16.2 or newer compatible 1.21.1 3.x version
 * Iron's required dependencies
+* Simply Swords is optional; its Iron's Spells mana-cost system is integrated when present
 
 Tempo Not Time must be installed on both the server and connecting clients.
 
 ## Resource Mapping
 
 ```text
-Iron's Max Mana        -> Casting Reserve
-Iron's Mana Regen      -> Casting Regeneration
-Iron's Spell Mana Cost -> Casting Draw
-Iron's Cooldown        -> Recharge Duration
-Cooldown Reduction     -> Cooldown Reduction
+Iron's Max Mana             -> Casting Reserve
+Iron's Mana Regen           -> Casting Regeneration
+Iron's Spell Mana Cost      -> Casting Draw
+Iron's Cooldown             -> Recharge Duration
+Cooldown Reduction          -> Cooldown Reduction
+Simply Swords Mana Cost     -> Casting Draw
+Simply Swords Item Cooldown -> Recharge Duration
 ```
 
 Iron's original attributes remain compatible with equipment, addons, effects, and other mods.
@@ -119,6 +122,9 @@ Client HUD settings are stored in:
 config/temponottime-client.toml
 ```
 
+The off-by-default `hud.only_show_bound_quick_cast_slots` setting can also be toggled from the
+inscription table. Its icon is colored while On and grayscale while Off.
+
 Major server options include:
 
 * Enable or disable Tempo Not Time
@@ -186,7 +192,9 @@ While Tempo Not Time is active:
 * Scroll tooltips display the normalized recharge duration
 * Casting failures provide action-bar feedback
 
-An optional HUD setting can also hide unbound quick-cast spell slots and compact the remaining slots.
+An optional HUD setting can hide unbound quick-cast spell slots and compact the remaining slots
+without changing their quick-cast indices. The inscription table exposes it as a persisted icon
+toggle with `Only show bound quick cast slots: On/Off` hover text.
 
 The Casting Reserve bar continues using Iron's existing HUD positioning and display settings.
 
@@ -218,6 +226,11 @@ Current integration target:
 ```text
 Iron's Spells 'n Spellbooks 1.21.1-3.16.2
 ```
+
+Simply Swords' configured weapon mana costs use the same Casting Draw conversion and authoritative
+reserve gate. Successful weapon abilities create recharge debt from their final effective item
+cooldown, including charge-on-release abilities, without making Simply Swords a required dependency.
+The exact optional hooks are documented in `docs/SIMPLY_SWORDS_INTEGRATION.md`.
 
 ## Public API
 

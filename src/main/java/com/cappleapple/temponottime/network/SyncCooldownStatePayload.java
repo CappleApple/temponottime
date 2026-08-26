@@ -3,6 +3,7 @@ package com.cappleapple.temponottime.network;
 import com.cappleapple.temponottime.TempoNotTime;
 import com.cappleapple.temponottime.casting.CooldownManager;
 import com.cappleapple.temponottime.config.ServerConfig;
+import com.cappleapple.temponottime.compat.SimplySwordsManaCompatibility;
 import com.cappleapple.temponottime.data.CooldownInstance;
 import io.redspace.ironsspellbooks.api.spells.SpellData;
 import net.minecraft.network.FriendlyByteBuf;
@@ -75,6 +76,7 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled,
             spellStates.putIfAbsent(id, createSpellState(player, id, level));
         }
         manager.data(player).cooldowns().forEach((id, instances) -> {
+            if (SimplySwordsManaCompatibility.isExternalCooldown(id)) return;
             int level = instances.isEmpty() ? 1 : instances.getFirst().spellLevel();
             spellStates.put(id, createSpellState(player, id, level));
         });
