@@ -1,112 +1,71 @@
 # Tempo Not Time
 
-Tempo Not Time is an addon for Iron's Spells 'n Spellbooks on NeoForge 1.21.1 that replaces mana spending with a cooldown-focused casting system.
+Tempo Not Time is an addon for Iron's Spells 'n Spellbooks that turns mana into a cooldown-focused casting system.
 
-Iron's existing spell costs, cooldowns, equipment bonuses, and addon content still determine balance, but instead of spending mana and waiting for it to regenerate, you manage **Casting Reserve**, spell charges, and recharge time.
+Instead of spending mana and waiting for a bar to refill, spells occupy part of your **Casting Reserve** while they recover. Iron's normal spell costs, cooldowns, gear bonuses, and addon content still matter; Tempo just gives those numbers a different job.
 
-## Requirements
+Built for Minecraft 1.21.1 / NeoForge.
 
-* Minecraft 1.21.1
-* NeoForge 21.1.200 or newer compatible 21.1.x version
-* Iron's Spells 'n Spellbooks 1.21.1-3.16.2 or newer compatible 1.21.1 3.x version
-* Iron's required dependencies
-* Simply Swords is optional; its Iron's Spells mana-cost system is integrated when present
+## The basic idea
 
-Tempo Not Time must be installed on both the server and connecting clients.
-
-## Resource Mapping
+Iron's existing stats are reused rather than replaced with a second parallel set:
 
 ```text
-Iron's Max Mana             -> Casting Reserve
-Iron's Mana Regen           -> Casting Regeneration
-Iron's Spell Mana Cost      -> Casting Draw
-Iron's Cooldown             -> Recharge Duration
-Cooldown Reduction          -> Cooldown Reduction
-Simply Swords Mana Cost     -> Casting Draw
-Simply Swords Item Cooldown -> Recharge Duration
+Max Mana         -> Casting Reserve
+Mana Regen       -> Casting Regeneration
+Spell Mana Cost  -> Casting Draw
+Spell Cooldown   -> Recharge Duration
 ```
 
-Iron's original attributes remain compatible with equipment, addons, effects, and other mods.
+If a spell has 60 Casting Draw and you have 300 Casting Reserve, casting it temporarily occupies 60 reserve until that cast recovers. Other spells can use whatever reserve is still free.
 
-When Tempo Not Time is enabled, mana is no longer spent normally. Instead, those values are used by the new casting system.
+This makes spellcasting feel closer to managing a loadout of recovering abilities than managing a mana potion bar.
 
-## Casting Mechanics
+## Spell charges
 
-Tempo Not Time has three main mechanics. Each can be enabled or disabled independently.
+A spell can have more than one charge when your Casting Reserve is high enough compared with its Casting Draw.
 
-### Cooldown Load
-
-Having several spells recovering at once can slow down overall recharge speed.
-
-You can configure:
-
-* How many cooldowns are free before penalties begin
-* How strongly additional cooldowns slow recovery
-* The minimum recovery speed
-* Whether multiple spent charges count separately
-
-Cooldown load never prevents casting. It only affects recharge speed.
-
-### Spell Charges
-
-Spells can gain multiple charges based on the player's Casting Reserve compared to the spell's Casting Draw.
-
-By default, charge requirements double with each additional charge.
-
-For a spell with **20 Casting Draw**:
+The default charge curve doubles the requirement for each extra charge. For a 20-draw spell:
 
 ```text
-1 charge  -> 20 Casting Reserve
-2 charges -> 40 Casting Reserve
-3 charges -> 80 Casting Reserve
-4 charges -> 160 Casting Reserve
+1 charge  -> 20 reserve
+2 charges -> 40 reserve
+3 charges -> 80 reserve
+4 charges -> 160 reserve
 ```
 
-Each cast still occupies only one normal Casting Draw while that charge recovers.
+Charges normally recover one at a time, although parallel recovery is available in the server config.
 
-Charges recover sequentially by default, with parallel recovery available through configuration.
+Iron's recast spells still use their normal follow-up behavior. The initial cast spends a Tempo charge; follow-up recasts do not create extra Tempo cooldown entries.
 
-Iron's recast spells consume one Tempo charge when initially cast. Their built-in follow-up casts continue using Iron's normal recast system.
+## Cooldown load
 
-### Casting Reserve
+Recovering too many things at once can slow your overall recovery rate.
 
-Every recovering cast temporarily occupies part of your Casting Reserve.
+You can configure how many active cooldowns are free, how strongly extra cooldowns affect recovery, the minimum recovery speed, and whether multiple spent charges count separately.
 
-For example:
+Cooldown load never hard-locks casting. It only changes how quickly active cooldowns recover.
 
-```text
-Maximum Casting Reserve: 300
+## Recharge normalization
 
-Recovering spell: 60 Casting Draw
-Recovering spell: 60 Casting Draw
-Recovering spell: 60 Casting Draw
+Very short and very long cooldowns can optionally be pulled toward a configurable middle range. This is a soft curve rather than a hard clamp, so fast spells remain fast and slow spells remain slow without extreme outliers dominating a build.
 
-Available Casting Reserve: 120
-```
+Short and long cooldown normalization can be tuned separately.
 
-That reserve becomes available again as each cast finishes recovering.
+## HUD
 
-This means powerful spells naturally take up more of your available casting capacity.
+Tempo reuses Iron's existing spell and mana UI instead of replacing it with a separate HUD.
 
-Iron's Instant Mana effect instead restores available Casting Reserve while Tempo Not Time is active.
+While the mod is active:
 
-## Casting Recovery
+- the mana bar displays available Casting Reserve;
+- mana cost text becomes Casting Draw;
+- mana regeneration is presented as Casting Regeneration;
+- spell slots show remaining charges when a spell has more than one;
+- cooldown shading tracks the next returning charge; and
+- scroll tooltips show the normalized recharge duration.
 
-**Casting Regeneration** controls how quickly spells recover.
-
-Iron's Mana Regeneration bonuses are converted into Casting Regeneration, so existing equipment and effects continue contributing to your build.
-
-Cooldown Load can then further modify your final **Casting Recovery** speed.
-
-## Recharge Normalization
-
-Tempo Not Time can normalize unusually short or unusually long spell cooldowns.
-
-Instead of forcing every spell into a hard minimum or maximum, recharge durations are smoothly pulled toward a configurable normal range.
-
-This keeps fast spells fast and slow spells slow while reducing extreme cooldown differences.
-
-Short and long cooldowns can be normalized independently.
+There is also an optional setting to hide unbound quick-cast slots without changing their actual quick-cast indices. The toggle is available from the inscription table.
 
 ## Configuration
 
@@ -122,85 +81,33 @@ Client HUD settings are stored in:
 config/temponottime-client.toml
 ```
 
-The off-by-default `hud.only_show_bound_quick_cast_slots` setting can also be toggled from the
-inscription table. Its icon is colored while On and grayscale while Off.
-
-Major server options include:
-
-* Enable or disable Tempo Not Time
-* Convert Max Mana into Casting Reserve
-* Convert Mana Regeneration into Casting Regeneration
-* Enable or disable mana consumption
-* Preserve or clear cooldowns on death
-* Creative-mode bypasses
-* Casting Reserve limits
-* Casting Draw scaling
-* Spell charges
-* Sequential or parallel charge recovery
-* Charge scaling formula
-* Cooldown Load
-* Casting Recovery scaling
-* Recharge normalization
-* Debug logging
-
-The charge requirement formula is configurable, allowing pack authors to use linear, doubling, cumulative, or custom scaling.
-
-## Per-Spell Overrides
-
-Tempo Not Time creates:
+Per-spell overrides are written to:
 
 ```text
 config/temponottime-spell-overrides.json
 ```
 
-This lets individual spells override the normal calculated behavior.
+An override can change Casting Draw, maximum charges, cooldown scaling, or whether a spell participates in reserve/load behavior. Spells not listed continue using the normal calculations.
 
-Example:
-
-```json
-{
-  "irons_spellbooks:fireball": {
-    "casting_draw": 75.0,
-    "max_charges": 3,
-    "cooldown_multiplier": 1.0,
-    "charges_allowed": true,
-    "casting_reserve_applies": true,
-    "load_scaling_applies": true
-  }
-}
-```
-
-Spells not listed continue using their automatically calculated values.
-
-Reload overrides with:
+Reload the override file with:
 
 ```text
 /temponottime reload
 ```
 
-## HUD
+## Compatibility
 
-While Tempo Not Time is active:
+Tempo uses Iron's real spell definitions, costs, cooldowns, attributes, equipment modifiers, and addon spells, which means most content does not need a dedicated compatibility patch.
 
-* Iron's mana bar becomes the **Casting Reserve** bar
-* Mana Cost becomes **Casting Draw**
-* Max Mana becomes **Casting Reserve**
-* Mana Regeneration becomes **Casting Regeneration**
-* Recharge speed is called **Casting Recovery**
-* Spell slots display remaining charges when more than one is available
-* Normal cooldown shading shows progress toward the next returning charge
-* Scroll tooltips display the normalized recharge duration
-* Casting failures provide action-bar feedback
+Scrolls and mob casting keep Iron's normal behavior.
 
-An optional HUD setting can hide unbound quick-cast spell slots and compact the remaining slots
-without changing their quick-cast indices. The inscription table exposes it as a persisted icon
-toggle with `Only show bound quick cast slots: On/Off` hover text.
+Simply Swords is optional. When installed, its Iron's-compatible weapon mana costs can use Casting Reserve and its effective item cooldown can become Tempo recharge debt. See [the Simply Swords notes](docs/SIMPLY_SWORDS_INTEGRATION.md) for the exact behavior.
 
-The Casting Reserve bar continues using Iron's existing HUD positioning and display settings.
+The Iron's integration points are documented in [docs/IRONS_INTEGRATION.md](docs/IRONS_INTEGRATION.md) for maintainers and addon authors.
 
 ## Commands
 
-All commands require permission level 2.
+Commands require permission level 2:
 
 ```text
 /temponottime info
@@ -211,52 +118,28 @@ All commands require permission level 2.
 /temponottime reload
 ```
 
-`reload` can also be used from the dedicated-server console.
+## Requirements
 
-## Compatibility
+- Minecraft 1.21.1
+- NeoForge 21.1.200 or newer compatible 21.1 build
+- Iron's Spells 'n Spellbooks 1.21.1-3.16.2 or compatible 1.21.1 3.x build
+- Iron's normal dependencies
+- Java 21
 
-Tempo Not Time uses Iron's actual spell costs, cooldowns, attributes, equipment modifiers, effects, and addon spells instead of maintaining separate compatibility values.
+Install Tempo Not Time on both the server and clients.
 
-Spellbook and sword casts use Tempo's casting system.
+## API
 
-Scrolls and mob casting retain Iron's normal behavior.
-
-Current integration target:
-
-```text
-Iron's Spells 'n Spellbooks 1.21.1-3.16.2
-```
-
-Simply Swords' configured weapon mana costs use the same Casting Draw conversion and authoritative
-reserve gate. Successful weapon abilities create recharge debt from their final effective item
-cooldown, including charge-on-release abilities, without making Simply Swords a required dependency.
-The exact optional hooks are documented in `docs/SIMPLY_SWORDS_INTEGRATION.md`.
-
-## Public API
-
-Tempo Not Time provides an API for mods that need access to:
-
-* Casting Reserve
-* Casting Draw
-* Spell charges
-* Active recharge instances
-* Casting Recovery
-* Cast reservation
+The public API exposes Casting Reserve, Casting Draw, spell charges, recovery state, and cast-reservation hooks for integrations that need to participate directly in the system.
 
 ## Building
 
-Requires Java 21.
-
 ```powershell
-./gradlew.bat test build
+.\gradlew.bat test build
 ```
 
-Built JARs are placed in:
-
-```text
-build/libs/
-```
+Built jars are written to `build/libs/`.
 
 ## License
 
-Tempo Not Time is published under the MIT License. See `LICENSE` for details.
+Tempo Not Time is available under the MIT License.

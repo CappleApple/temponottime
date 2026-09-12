@@ -1,69 +1,98 @@
-# Iron's 1.21.1 integration
+# Iron's Spells 'n Spellbooks integration
 
-Tempo Not Time targets Iron's Spells 'n Spellbooks `1.21.1-3.16.2`. Integration was implemented against the tagged source rather than inferred class names.
+This file documents the parts of Iron's Spells 'n Spellbooks that Tempo Not Time depends on. It is mainly here for maintainers and addon authors who need to understand where Tempo joins Iron's normal casting flow.
 
-## Inspected paths
+Current integration target: **Iron's Spells 'n Spellbooks 1.21.1-3.16.2**.
 
-- Attributes: `api.registry.AttributeRegistry` registers `MAX_MANA`, `MANA_REGEN`, `COOLDOWN_REDUCTION`, and the other synchronized spell attributes.
-- Player magic data: `api.magic.MagicData` owns mana, casting state, `PlayerCooldowns`, recasts, serialization, and Iron's sync behavior.
-- Validation/initiation: `api.spells.AbstractSpell.canBeCastedBy` checks mana and `PlayerCooldowns`; `attemptInitiateCast` posts `SpellPreCastEvent` before calling `MagicData.initiateCast`.
-- Spend/cooldown: `AbstractSpell.castSpell` posts `SpellOnCastEvent`, subtracts its resulting mana cost, and asks `MagicManager` to add the cooldown.
-- Effective duration: `AbstractSpell.getSpellCooldown` supplies the runtime base recharge. Tempo Not Time normalizes that base, then reapplies the ratio from `MagicManager.getEffectiveSpellCooldown` and the final cooldown event so Iron's native reduction and addon modifiers retain their normal effect.
-- Continuous casting and regeneration: `MagicManager.tick` performs the mid-cast mana-floor check; `regenPlayerMana` mutates current mana.
-- Selection and HUD: `api.magic.SpellSelectionManager`, `player.ClientMagicData`, `gui.overlays.ManaBarOverlay`, and Iron's spell-bar renderer provide selected spell and cooldown presentation.
-- Tooltips: `util.TooltipsUtils.getSpellManaCostComponent` creates player-visible spell mana-cost text. Attribute modifier text uses each `Attribute` description ID.
-- Instant Mana: `effect.InstantManaEffect.applyInstantenousEffect` calculates `25 * level + 5% * level` of effective Max Mana before applying Iron's normal mana clamp.
-- Networking: Iron's payloads sync mana/casting/cooldown state. Tempo Not Time adds only its replacement state, uses that snapshot for Iron-facing HUD compatibility values, and does not accept a gameplay payload from clients.
+## What Iron's still owns
 
-## Public hooks used
+Tempo does not replace spell definitions or the actual spell engine. Iron's remains responsible for:
 
-- `SpellPreCastEvent` performs the authoritative charge/Casting Reserve decision while preserving unrelated Iron's validation.
-- `SpellOnCastEvent` commits exactly one cooldown instance for the successful cast and sets event mana cost to zero.
-- Iron's active `PlayerRecasts` entry distinguishes follow-up blasts from a new activation; those blasts bypass Tempo's charge/reserve validation and do not commit additional instances.
-- `SpellCooldownAddedEvent.Post` supplies Iron's final effective cooldown and activates the matching waiting instance.
-- NeoForge player tick/login/logout/clone/respawn/dimension events advance, persist, reconcile, and synchronize replacement state.
-- `EntityAttributeModificationEvent` attaches `temponottime:casting_reserve` to players.
-- NeoForge data attachments serialize versioned cooldown debt.
-- NeoForge custom payload registration provides server-to-client display state.
+- spell definitions, cast time, recasts, and spell-specific validation;
+- the original mana-cost calculation;
+- cooldown reduction and other spell attributes;
+- spell selection and quick-cast slots;
+- equipment/addon attribute modifiers; and
+- the actual spell effects.
 
-## Mixins and why they are required
+Tempo takes the resulting cost/cooldown information and applies its own reserve, charge, and recovery rules around it.
 
-The public events do not cover every required decision or presentation point. All mixins target a small method and live in `com.cappleapple.temponottime.mixin`.
+## Main integration points
+
+The important Iron's classes are:
+
+- `AttributeRegistry` for Max Mana, Mana Regen, Cooldown Reduction, and related spell attributes;
+- `MagicData` for player magic state and casting/recast information;
+- `AbstractSpell` for cast validation, mana cost, and base cooldowns;
+- `MagicManager` for effective cooldowns and mana regeneration;
+- `SpellSelectionManager` / `ClientMagicData` for client spell selection and display state; and
+- Iron's mana/spell overlays and tooltip helpers for the HUD terminology Tempo replaces.
+
+Tempo uses Iron's public spell events where they are sufficient and narrowly scoped mixins where there is no event at the required point.
+
+## Public events and NeoForge hooks
+
+`SpellPreCastEvent` is where Tempo checks charges and available Casting Reserve after Iron's own spell validation.
+
+`SpellOnCastEvent` commits the successful cast and prevents the normal mana payment while mana-free casting is enabled.
+
+`SpellCooldownAddedEvent.Post` provides the final effective cooldown after Iron's own modifiers. Tempo uses that duration for the matching recovery instance.
+
+Iron's active recast entry is used to distinguish a follow-up recast from a new activation, so a multi-stage spell does not spend additional Tempo charges for every follow-up blast.
+
+NeoForge player lifecycle events handle persistence and synchronization, while a data attachment stores Tempo's recharge state.
+
+## Why mixins are still needed
+
+A few decisions happen before or after Iron's public events, so event handlers alone cannot implement the mechanic cleanly.
 
 ### `AbstractSpellMixin`
 
-- Redirects only the current-mana read in `canBeCastedBy`. `SpellPreCastEvent` occurs after that check, so an event alone cannot allow a zero-mana player to reach reservation validation.
-- Redirects only Iron's native `PlayerCooldowns.isOnCooldown` check for managed cast sources. The replacement system must allow additional stored charges while keeping all unrelated checks in the original method.
-- Injects immediately after `MagicData.initiateCast` to create an atomic pending reservation. This closes the gap between the pre-cast validation event and later successful-cast event without trusting the client.
-- Redirects only `MagicData.setMana` in `castSpell`. Setting `SpellOnCastEvent` mana cost to zero is cooperative, but another later event listener could otherwise restore a nonzero value; the redirect guarantees the advertised no-spend rule.
+This hook handles the narrow parts of spell validation that need to see Tempo state:
+
+- allowing a valid zero-mana player to reach Tempo's reserve check;
+- allowing another stored charge even when Iron's normal cooldown object is active;
+- creating the pending reservation immediately after Iron begins a cast; and
+- preventing Iron's normal mana subtraction after a successful Tempo-managed cast.
+
+The rest of `AbstractSpell` continues through Iron's normal code.
 
 ### `MagicManagerMixin`
 
-- Cancels `regenPlayerMana` while mana gameplay is disabled. There is no public cancellable regeneration event, and repeatedly refilling/draining mana would be a more invasive hidden-resource hack.
-- Redirects the one `MagicData.getMana` used by Iron's continuous-cast termination condition. Without this hook, a valid zero-mana continuous spell would stop early despite passing initial validation.
+This disables ordinary mana regeneration when the pack has chosen mana-free casting and substitutes Casting Reserve for Iron's mid-cast mana-floor check.
 
 ### `MagicDataMixin`
 
-Reports available Casting Reserve from Iron's public server-side `MagicData.getMana` query while mana-free casting is active. A re-entry guard prevents compatibility listeners from recursively recalculating reserve. This is a read-only projection; Tempo's authoritative cast and recovery paths never consume the reported value.
+Some integrations ask Iron's public `MagicData.getMana()` for an affordability value. While Tempo is active, that read can expose available Casting Reserve instead. This is a compatibility view only; Tempo's server-side reserve calculation remains the source used to authorize casts.
 
 ### `InstantManaEffectMixin`
 
-Runs after Iron's Instant Mana effect and grants the server-owned Casting Reserve credit by the same raw recovery amount. Credit can refill occupied reserve and can exceed the ordinary maximum by at most the latest single dose; later Casting Draw consumes that credit first.
+Iron's Instant Mana effect becomes an immediate Casting Reserve recovery effect while Tempo is active.
 
 ### `AttributeMixin`
 
-Replaces description IDs only for Iron's `MAX_MANA` and `MANA_REGEN` attribute objects while enabled. Modifier identity and math remain untouched, but generic equipment tooltips use Casting Reserve and Casting Regeneration terminology. No suitably scoped tooltip event exists for this generated attribute text.
+Only the display names for Iron's Max Mana and Mana Regen attributes are changed, allowing normal equipment tooltips to use Casting Reserve / Casting Regeneration terminology without replacing the attributes themselves.
 
-### Client presentation mixins
+### Client display hooks
 
-- `ManaBarOverlayMixin` replaces Iron's mana values with available Casting Reserve while reusing Iron's texture and reading its display mode, anchor, bar offsets, numerical-text toggle, and text offsets directly from Iron's client config. Contextual visibility uses reserve fullness in place of mana fullness.
-- `SpellBarOverlayMixin` renders authoritative available-charge counts on Iron's calculated spell icons and suppresses counts of zero or one.
-- `TooltipsUtilsMixin` replaces Iron's spell mana-cost component with the localized Casting Draw component and redirects scroll cooldown formatting through the server-synchronized recharge-normalization curve.
-- `ClientMagicDataMixin` supplies available Casting Reserve through Iron's public current-mana query and the next recovering charge's cooldown percentage to Iron's existing spell HUD, including between usable charges.
-- `LivingEntityClientMixin` reports synchronized maximum Casting Reserve when a client HUD asks the local player for Iron's Max Mana attribute. Server attribute math remains untouched.
+The client hooks reuse Iron's own HUD layout rather than drawing a second spell interface:
+
+- the mana overlay displays available Casting Reserve;
+- the spell bar displays Tempo charge counts and recovery state;
+- mana-cost tooltip text becomes Casting Draw; and
+- cooldown tooltip values use the synchronized normalization settings.
+
+## Cooldown calculation
+
+Iron's `getSpellCooldown` supplies the spell's normal base cooldown. Tempo can normalize that base, then preserves the ratio introduced by Iron's effective cooldown calculation and cooldown events.
+
+That is important for compatibility: equipment and addons that modify Iron's cooldown still modify the final Tempo recharge instead of being silently discarded.
 
 ## State ownership
 
-Iron's remains authoritative for spell definitions, cast time, spell-specific checks, selection, recasts, calculated mana cost, native cooldown reduction, and actual spell effects. Tempo Not Time owns only its versioned recharge instances, charge/reserve gates, normalized base recharge, converted Casting Recovery rate, persistence, and display snapshot.
+Tempo stores its own recharge instances, charge/reserve occupancy, normalization state, and display snapshot. It does not rewrite Iron's saved mana capability, copy third-party modifiers into a second attribute system, or modify spell items in the registry.
 
-The bridge never scans the item registry, rewrites Item instances, copies third-party attribute modifiers, or modifies Iron's saved mana capability format. Compatibility mana is derived from synchronized Tempo state and cannot authorize a cast.
+When debugging an integration, the useful distinction is:
+
+- **Iron's answers what the spell is and what it normally costs/does.**
+- **Tempo answers whether the player can spend a charge and how that cast recovers.**
