@@ -40,6 +40,7 @@ public final class SimplySwordsManaCompatibility {
     public static void spend(ServerPlayer player, float manaCost) {
         Item item = SPENDING_ITEM.get();
         int effectiveCooldown = 1;
+        int baseCooldown = 1;
         long gameTime = player.serverLevel().getGameTime();
         boolean hasCurrentCooldown = false;
         if (item != null) {
@@ -48,6 +49,7 @@ public final class SimplySwordsManaCompatibility {
                 CapturedCooldown captured = cooldowns.get(item);
                 if (captured != null && captured.gameTime() == gameTime) {
                     effectiveCooldown = captured.durationTicks();
+                    baseCooldown = captured.baseTicks();
                     hasCurrentCooldown = true;
                 }
                 cooldowns.remove(item);
@@ -56,16 +58,16 @@ public final class SimplySwordsManaCompatibility {
                 }
             }
         }
-        long instanceId = CooldownManager.INSTANCE.commitExternalManaUse(player, item, manaCost, effectiveCooldown);
+        long instanceId = CooldownManager.INSTANCE.commitExternalManaUse(player, item, manaCost, baseCooldown, effectiveCooldown);
         if (item != null && !hasCurrentCooldown && instanceId >= 0L) {
             PENDING_RETIMES.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>())
                     .put(item, new PendingRetime(instanceId, gameTime));
         }
     }
 
-    public static void beginCooldownCapture(LivingEntity actor, ItemStack stack) {
+    public static void beginCooldownCapture(LivingEntity actor, ItemStack stack, int baseCooldownTicks) {
         if (actor instanceof ServerPlayer player && handles(actor) && stack != null && !stack.isEmpty()) {
-            COOLDOWN_CAPTURE.set(new CooldownCapture(player, stack.getItem()));
+            COOLDOWN_CAPTURE.set(new CooldownCapture(player, stack.getItem(), baseCooldownTicks));
         } else {
             COOLDOWN_CAPTURE.remove();
         }
@@ -84,11 +86,11 @@ public final class SimplySwordsManaCompatibility {
             PENDING_RETIMES.remove(player.getUUID());
         }
         if (pending != null && pending.gameTime() == gameTime) {
-            CooldownManager.INSTANCE.retimeExternalManaUse(player, item, pending.instanceId(), durationTicks);
+            CooldownManager.INSTANCE.retimeExternalManaUse(player, item, pending.instanceId(), capture.baseTicks(), durationTicks);
             return;
         }
         EFFECTIVE_COOLDOWNS.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>())
-                .put(item, new CapturedCooldown(Math.max(1, durationTicks), gameTime));
+                .put(item, new CapturedCooldown(capture.baseTicks(), Math.max(1, durationTicks), gameTime));
     }
 
     public static void endCooldownCapture() {
@@ -104,10 +106,10 @@ public final class SimplySwordsManaCompatibility {
         return id.startsWith(COOLDOWN_PREFIX);
     }
 
-    private record CooldownCapture(ServerPlayer player, Item item) {
+    private record CooldownCapture(ServerPlayer player, Item item, int baseTicks) {
     }
 
-    private record CapturedCooldown(int durationTicks, long gameTime) {
+    private record CapturedCooldown(int baseTicks, int durationTicks, long gameTime) {
     }
 
     private record PendingRetime(long instanceId, long gameTime) {

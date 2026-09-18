@@ -22,7 +22,7 @@ When Tempo is disabled, or shared-reserve mode leaves mana consumption enabled, 
 
 Simply Swords uses `WeaponManaCost` to check and spend weapon mana, with its NeoForge helper reading and writing Iron's `MagicData`. Its public cooldown helper then applies the final item cooldown after the normal reduction rules.
 
-Tempo hooks those points rather than maintaining a separate table of weapon values. This means a weapon's configured mana cost and final cooldown remain the inputs.
+Tempo hooks those points rather than maintaining a separate table of weapon values. This means a weapon's configured mana cost, base cooldown, and final cooldown remain the inputs. Tempo adds `recharge_normalization.flat_modifer` to the captured base, normalizes it, then preserves the effective/base ratio. These adjustments affect Tempo's reserve recovery debt; Simply Swords still owns its native item timer.
 
 Charge-on-release abilities are supported as well. Tempo correlates the mana spend and the effective cooldown even when those two operations happen in the opposite order during the same server tick.
 
@@ -34,7 +34,7 @@ Simply Swords recovery entries use internal IDs below:
 temponottime:simply_swords/
 ```
 
-In shared-reserve mode, they count toward reserve usage and cooldown load, but they are not exposed as fake Iron's spells. They therefore do not appear in spell charge maps or quick-cast HUD slots.
+In shared-reserve mode, they count toward reserve usage and cooldown load. Per-spell load groups them by weapon item ID; shared load combines them with spell debt. They are not exposed as fake Iron's spells. They therefore do not appear in spell charge maps or quick-cast HUD slots.
 
 ## Mixins
 

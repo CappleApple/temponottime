@@ -31,6 +31,15 @@ public final class ExternalManaPolicy {
                 normalSeconds, shortStrength, longStrength, spreadSeconds);
     }
 
+    public static double rechargeDuration(double baseCooldownTicks, double effectiveCooldownTicks,
+                                          TimingNormalization settings) {
+        double base = Double.isFinite(baseCooldownTicks) && baseCooldownTicks > 0.0 ? baseCooldownTicks : 1.0;
+        double effective = Double.isFinite(effectiveCooldownTicks) && effectiveCooldownTicks > 0.0 ? effectiveCooldownTicks : 1.0;
+        // The bridge owns Tempo's debt only; Simply Swords still owns the native item timer.
+        double adjusted = settings.adjustedBaseTicks(base);
+        return settings.normalizeAdjustedTicks(adjusted, adjusted * effective / base);
+    }
+
     private static double finiteNonNegative(double value) {
         return Double.isFinite(value) ? Math.max(0.0, value) : 0.0;
     }

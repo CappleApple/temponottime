@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.2 - 2026-09-18
+
+### Added
+
+- Server TOML edits now refresh mechanics and connected clients live, including mode changes and enabling/disabling Tempo, without a command or restart.
+- Added default-on delay between casts of the same spell: 0.5 seconds plus 10% of actual cast time, clamped to configurable 0.1-10 second bounds. The flat base accepts positive or negative values; other spells and native follow-up recasts remain available.
+- Added signed `recharge_normalization.flat_modifer` to adjust base cooldowns in seconds before modifiers and normalization.
+- Added a separate cast-time normalization section with a flat adjustment, curve center, short/long strengths, and spread. Custom cast-time spells and zero-duration spells each have an opt-in switch, both off by default.
+- Added `cooldown_load.shared_cooldown_load`, defaulting to `false`: load applies separately to each spell's spent charges when enabled. Shared load remains available.
+
+### Changed
+
+- Updated the license to CC BY-NC-SA 4.0 with the Modpack/Server Exception and included the license notice in the mod JAR.
+- Enabled cooldown load now applies in both casting modes. Per-spell load always counts charges; `count_per_charge` controls shared load only.
+- Spell tooltips and inscription-table timing previews reflect the new timing settings.
+
 ## 1.3.1 - 2026-09-18
 
 ### Added

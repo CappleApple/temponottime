@@ -175,6 +175,7 @@ public final class CooldownModeGameTests {
             magic.setMana(0);
             effect.applyInstantenousEffect(null, null, player, 0, 1);
             helper.assertTrue(magic.getMana() == 30 && data.castingReserveCredit() == 0, "Disabled mod must preserve native mana");
+            verifyBalancing(helper, player);
             helper.succeed();
         } finally {
             ServerConfig.ENABLED.set(enabled);
@@ -188,4 +189,165 @@ public final class CooldownModeGameTests {
             ServerConfig.RECOVERY_MODE.set(recovery);
         }
     }
+    private static void verifyBalancing(GameTestHelper helper, ServerPlayer player) {
+        var settings = java.util.List.<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>of(
+                ServerConfig.ENABLED, ServerConfig.CASTING_MODE, ServerConfig.LOAD_ENABLED,
+                ServerConfig.SHARED_COOLDOWN_LOAD, ServerConfig.COUNT_PER_CHARGE, ServerConfig.FREE_COOLDOWNS,
+                ServerConfig.PENALTY_PER_ADDITIONAL_COOLDOWN, ServerConfig.RECOVERY_MODE,
+                ServerConfig.CONVERT_MANA_REGEN, ServerConfig.RECHARGE_NORMALIZATION_ENABLED,
+                ServerConfig.RECHARGE_FLAT_MODIFIER, ServerConfig.CAST_TIME_NORMALIZATION_ENABLED,
+                ServerConfig.CAST_TIME_FLAT_MODIFIER, ServerConfig.AFFECT_CUSTOM_CAST_TIMES,
+                ServerConfig.AFFECT_NO_CAST_TIME_SPELLS, ServerConfig.CHARGE_CAST_DELAY_ENABLED,
+                ServerConfig.CHARGE_CAST_DELAY_FLAT_BASE, ServerConfig.CHARGE_CAST_DELAY_PERCENTAGE,
+                ServerConfig.MINIMUM_CHARGE_CAST_DELAY, ServerConfig.MAXIMUM_CHARGE_CAST_DELAY);
+        var saved = settings.stream().map(net.neoforged.neoforge.common.ModConfigSpec.ConfigValue::get).toList();
+        var manager = CooldownManager.INSTANCE;
+        var data = manager.data(player);
+        var magic = MagicData.getPlayerMagicData(player);
+        try {
+            ServerConfig.ENABLED.set(true);
+            ServerConfig.CHARGE_CAST_DELAY_ENABLED.set(true);
+            ServerConfig.CHARGE_CAST_DELAY_FLAT_BASE.set(.5);
+            ServerConfig.CHARGE_CAST_DELAY_PERCENTAGE.set(10.0);
+            ServerConfig.MINIMUM_CHARGE_CAST_DELAY.set(.1);
+            ServerConfig.MAXIMUM_CHARGE_CAST_DELAY.set(10.0);
+            ServerConfig.CASTING_MODE.set(ServerConfig.CastingMode.SPELL_COOLDOWNS);
+            ServerConfig.LOAD_ENABLED.set(true);
+            ServerConfig.SHARED_COOLDOWN_LOAD.set(false);
+            ServerConfig.COUNT_PER_CHARGE.set(false);
+            ServerConfig.FREE_COOLDOWNS.set(1);
+            ServerConfig.PENALTY_PER_ADDITIONAL_COOLDOWN.set(1.0);
+            ServerConfig.CONVERT_MANA_REGEN.set(false);
+            ServerConfig.RECOVERY_MODE.set(ServerConfig.RecoveryMode.SEQUENTIAL);
+            var bolt = SpellRegistry.getSpell("irons_spellbooks:firebolt");
+            var ball = SpellRegistry.getSpell("irons_spellbooks:fireball");
+            data.clear();
+            var a = data.add(bolt.getSpellId(), 1, 0, 100, false, false, true);
+            var queued = data.add(bolt.getSpellId(), 1, 0, 100, false, false, true);
+            var b = data.add(ball.getSpellId(), 1, 0, 100, false, false, true);
+            helper.assertTrue(manager.loadMultiplier(player, bolt.getSpellId()) == .5
+                    && manager.loadMultiplier(player, ball.getSpellId()) == 1,
+                    "Per-spell load must count own charges even when count_per_charge is false");
+            player.tickCount = 1;
+            manager.onPlayerTick(new net.neoforged.neoforge.event.tick.PlayerTickEvent.Post(player));
+            helper.assertTrue(a.remainingTicks() == 99.5 && queued.remainingTicks() == 100 && b.remainingTicks() == 99,
+                    "Per-spell recovery speed or sequential queue is wrong");
+            ServerConfig.SHARED_COOLDOWN_LOAD.set(true);
+            helper.assertTrue(manager.loadMultiplier(player, ball.getSpellId()) == .5,
+                    "Shared load did not count distinct spells");
+            ServerConfig.COUNT_PER_CHARGE.set(true);
+            helper.assertTrue(Math.abs(manager.loadMultiplier(player, ball.getSpellId()) - 1.0 / 3) < .00001,
+                    "Shared load did not count all charges");
+            data.clear();
+            var finishing = data.add(bolt.getSpellId(), 1, 0, 1, false, false, true);
+            finishing.advance(.75);
+            var survivor = data.add(ball.getSpellId(), 1, 0, 100, false, false, true);
+            manager.onPlayerTick(new net.neoforged.neoforge.event.tick.PlayerTickEvent.Post(player));
+            helper.assertTrue(survivor.remainingTicks() == 99.5,
+                    "Finishing another spell changed load during the same tick");
+            data.clear();
+            ServerConfig.LOAD_ENABLED.set(false);
+            ServerConfig.RECHARGE_NORMALIZATION_ENABLED.set(false);
+            ServerConfig.RECHARGE_FLAT_MODIFIER.set(2.0);
+            player.getAttribute(AttributeRegistry.COOLDOWN_REDUCTION).setBaseValue(1.5);
+            player.getAttribute(AttributeRegistry.MAX_MANA).setBaseValue(800);
+            int base = bolt.getSpellCooldown();
+            double ratio = 2 - io.redspace.ironsspellbooks.api.util.Utils.softCapFormula(1.5);
+            int expected = (int) ((base + 40) * ratio);
+            int actual = io.redspace.ironsspellbooks.capabilities.magic.MagicManager.getEffectiveSpellCooldown(bolt, player, CastSource.SPELLBOOK);
+            helper.assertTrue(actual == expected, "Flat cooldown adjustment was not applied before native reduction");
+            bolt.castSpell(player.level(), 1, player, CastSource.SPELLBOOK, true);
+            helper.assertTrue(data.forSpell(bolt.getSpellId()).getFirst().durationTicks() == expected,
+                    "Flat cooldown adjustment was lost or applied twice on commit");
+            data.clear();
+            ServerConfig.CAST_TIME_NORMALIZATION_ENABLED.set(false);
+            ServerConfig.CAST_TIME_FLAT_MODIFIER.set(1.0);
+            ServerConfig.AFFECT_CUSTOM_CAST_TIMES.set(false);
+            ServerConfig.AFFECT_NO_CAST_TIME_SPELLS.set(false);
+            player.getAttribute(AttributeRegistry.CAST_TIME_REDUCTION).setBaseValue(1);
+            var heal = SpellRegistry.getSpell("irons_spellbooks:greater_heal");
+            helper.assertTrue(heal != SpellRegistry.none(), "Cast fixture missing");
+            helper.assertTrue(heal.attemptInitiateCast(net.minecraft.world.item.ItemStack.EMPTY, 1, player.level(), player,
+                    CastSource.SPELLBOOK, true, "mainhand"), "Timed cast initiation failed");
+            helper.assertTrue(magic.getCastDuration() == heal.getCastTime(1) + 20,
+                    "Actual player cast did not receive normalized duration");
+            manager.commitCast(player, heal, 1, heal.getManaCost(1), CastSource.SPELLBOOK);
+            helper.assertTrue(data.chargeCastDelayTicks(heal.getSpellId()) == 24,
+                    "Charge delay did not use the actual adjusted seven-second cast time");
+            manager.onPlayerTick(new net.neoforged.neoforge.event.tick.PlayerTickEvent.Post(player));
+            helper.assertTrue(data.chargeCastDelayTicks(heal.getSpellId()) == 24,
+                    "Charge delay elapsed before the current cast finished");
+            magic.resetCastingState();
+            helper.assertTrue(manager.canBeginCast(player, heal, 1, CastSource.SPELLBOOK).failure()
+                            == com.cappleapple.temponottime.casting.CastDecision.Failure.CHARGE_CAST_DELAY,
+                    "Another stored charge bypassed the inter-cast delay");
+            helper.assertTrue(manager.canBeginCast(player, ball, 1, CastSource.SPELLBOOK).allowed(),
+                    "Charge delay incorrectly blocked another spell");
+            var savedDelay = data.save();
+            data.load(savedDelay);
+            var cloned = new com.cappleapple.temponottime.data.PlayerCooldownData();
+            cloned.copyFrom(data);
+            helper.assertTrue(cloned.chargeCastDelayTicks(heal.getSpellId()) == 24,
+                    "Charge delay was lost across save/load or death-copy");
+            manager.activateNext(player, heal, 100);
+            manager.restoreInstantMana(player, 10000);
+            helper.assertTrue(data.forSpell(heal.getSpellId()).isEmpty() && data.chargeCastDelayTicks(heal.getSpellId()) == 24,
+                    "Instant mana must recover charges without removing the inter-cast delay");
+            var delaySnapshot = SyncCooldownStatePayload.from(player).spells().get(heal.getSpellId());
+            helper.assertTrue(delaySnapshot != null && delaySnapshot.chargeCastDelayTicks() == 24
+                    && delaySnapshot.chargeCastDelayFraction() == 1,
+                    "Delay-only spell state was not synchronized to the HUD");
+            for (int tick = 0; tick < 24; tick++) {
+                player.tickCount++;
+                manager.onPlayerTick(new net.neoforged.neoforge.event.tick.PlayerTickEvent.Post(player));
+            }
+            helper.assertTrue(manager.canBeginCast(player, heal, 1, CastSource.SPELLBOOK).allowed(),
+                    "Delay did not expire after the configured number of ticks");
+            data.startChargeCastDelay(heal.getSpellId(), 20);
+            ServerConfig.CHARGE_CAST_DELAY_ENABLED.set(false);
+            helper.assertTrue(manager.canBeginCast(player, heal, 1, CastSource.SPELLBOOK).allowed(),
+                    "Disabled delay still blocked casting");
+            manager.onPlayerTick(new net.neoforged.neoforge.event.tick.PlayerTickEvent.Post(player));
+            helper.assertTrue(data.chargeCastDelays().isEmpty(), "Disabled delay retained stale timers");
+            ServerConfig.CHARGE_CAST_DELAY_ENABLED.set(true);
+            data.clear();
+            helper.assertTrue(com.cappleapple.temponottime.casting.SpellTiming.effectiveCastTicks(bolt, 1, player, 0) == 0,
+                    "Instant spell changed without opt-in");
+            ServerConfig.AFFECT_NO_CAST_TIME_SPELLS.set(true);
+            helper.assertTrue(bolt.attemptInitiateCast(net.minecraft.world.item.ItemStack.EMPTY, 1, player.level(), player,
+                    CastSource.SPELLBOOK, true, "mainhand"), "Opted-in instant cast initiation failed");
+            helper.assertTrue(magic.getCastDuration() == 20, "Opted-in instant spell did not receive a delay");
+            magic.resetCastingState();
+            data.clear();
+            var custom = SpellRegistry.getSpell("irons_spellbooks:recall");
+            helper.assertTrue(custom != SpellRegistry.none(), "Custom cast fixture missing");
+            int original = custom.getEffectiveCastTime(1, player);
+            helper.assertTrue(com.cappleapple.temponottime.casting.SpellTiming.effectiveCastTicks(custom, 1, player, original) == original,
+                    "Custom timing changed without opt-in");
+            ServerConfig.AFFECT_CUSTOM_CAST_TIMES.set(true);
+            helper.assertTrue(com.cappleapple.temponottime.casting.SpellTiming.effectiveCastTicks(custom, 1, player, original) == original + 20,
+                    "Custom cast-time opt-in did not apply");
+            data.startChargeCastDelay(bolt.getSpellId(), 10);
+            var snapshot = SyncCooldownStatePayload.from(player);
+            var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), helper.getLevel().registryAccess());
+            try {
+                SyncCooldownStatePayload.STREAM_CODEC.encode(buffer, snapshot);
+                var decoded = SyncCooldownStatePayload.STREAM_CODEC.decode(buffer);
+                helper.assertTrue(decoded.equals(snapshot) && decoded.rechargeFlatModifier() == 2
+                        && decoded.castTimeNormalization().flatModifier() == 1
+                        && decoded.castTimeNormalization().affectCustomCastTimes()
+                        && decoded.castTimeNormalization().affectNoCastTimeSpells(), "Timing settings snapshot lost configuration");
+            } finally { buffer.release(); }
+        } finally {
+            magic.resetCastingState();
+            data.clear();
+            for (int i = 0; i < settings.size(); i++) restoreSetting(settings.get(i), saved.get(i));
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void restoreSetting(net.neoforged.neoforge.common.ModConfigSpec.ConfigValue setting, Object value) {
+        setting.set(value);
+    }
+
 }

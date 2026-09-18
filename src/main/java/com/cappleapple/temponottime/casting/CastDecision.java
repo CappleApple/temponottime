@@ -4,6 +4,7 @@ public record CastDecision(boolean allowed, Failure failure) {
     public enum Failure {
         NONE,
         NO_CHARGES,
+        CHARGE_CAST_DELAY,
         NO_CAPACITY,
         EVENT_CANCELED
     }

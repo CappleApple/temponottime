@@ -8,7 +8,7 @@ Built for Minecraft 1.21.1 / NeoForge.
 
 ## Casting modes
 
-Set `general.casting_mode` in `config/temponottime-server.toml` and restart the server or world:
+Set `general.casting_mode` in `config/temponottime-server.toml` and save the file:
 
 ```toml
 [general]
@@ -28,7 +28,7 @@ In `SPELL_COOLDOWNS` mode:
 - Max Mana is displayed as **Charge Capacity**, and spell Mana Cost as **Charge Cost**. Charge Capacity determines charge counts through the existing charge formula when `general.convert_max_mana_to_casting_reserve` is enabled.
 - When Charge Capacity is below a spell's Charge Cost, its cooldown is increased by `(cost - capacity) / cost`. For example, 50 capacity against 100 cost makes a 10-second cooldown take 15 seconds. Zero capacity doubles the cooldown; capacity at or above the cost adds no penalty. The comparison uses Iron's Max Mana and the cast's mana cost, before reserve-specific scaling or credit.
 - Mana Regeneration speeds recharge when `general.convert_mana_regeneration_to_casting_regeneration` is enabled. Cooldown Reduction still affects each spell's duration.
-- Mana spending, shared reserve limits, and cooldown load are bypassed even if their individual settings say otherwise. Casting one spell does not slow or block another.
+- Mana spending and shared reserve limits are bypassed even if their individual settings say otherwise. Cooldown load is optional and defaults to independent load per spell; sharing it is opt-in.
 - `charges.enabled`, charge limits, sequential/parallel recovery, recharge normalization, and applicable per-spell overrides still work. Disabling charges gives each spell one use followed by its cooldown.
 - Mana potions and other applications of Iron's Instant Mana effect advance currently recovering spell charges. Each spell receives `restored mana / that cast's mana cost` of a full charge's recharge time. For example, restoring 20 mana advances a 40-mana, 10-second charge by 5 seconds.
 - Sequential recovery spends the dose on the oldest recovering charge, carrying unused recovery into that spell's next charge. Parallel recovery applies the dose to every recovering charge. Excess recovery is discarded; active recasts and unfinished casts are unaffected until their cooldown starts.
@@ -58,19 +58,64 @@ Charges normally recover one at a time, although parallel recovery is available 
 
 Iron's recast spells still use their normal follow-up behavior. The initial cast spends a Tempo charge; follow-up recasts do not create extra Tempo cooldown entries.
 
+## Delay between charge casts
+
+By default, a successful cast adds a short delay before the same spell can use another charge. Other spells remain available, and native follow-up recasts bypass the delay. Both casting modes use it.
+
+```toml
+[delay_between_charge_casts]
+    enabled = true
+    min_delay_seconds = 0.1
+    max_delay_seconds = 10.0
+    delay_modifier_percentage = 10.0
+    flat_base_modifier = 0.5
+```
+
+Delay in seconds is `clamp(flat_base_modifier + actual_cast_seconds * delay_modifier_percentage / 100, min_delay_seconds, max_delay_seconds)`, rounded up to a game tick. Defaults give an instant spell a 0.5-second delay and a 2-second cast a 0.7-second delay. The flat modifier accepts positive or negative values. If the maximum is below the minimum, the minimum takes precedence.
+
+The calculation uses the cast's actual duration after cast-time adjustments and gear modifiers. Its timer pauses while that spell is still casting, so channels retain a gap after finishing. It runs independently of charge recovery, Mana Regen, cooldown load, and Instant Mana. Available charges keep their count while the HUD shading shows the short delay. Creative players using the existing charge bypass also bypass this delay.
+
+The delay follows cooldown save/logout/death policies. Disabling it clears active delay timers on the next player tick. `/temponottime clear` clears both recharge debt and inter-cast delays.
+
 ## Cooldown load
 
-In shared-reserve mode, recovering too many things at once can slow your overall recovery rate. `SPELL_COOLDOWNS` bypasses this penalty.
+When `[cooldown_load].enabled = true`, spent charges slow recovery according to the existing free-cooldown allowance, penalty, and minimum speed. This works in both casting modes.
 
-You can configure how many active cooldowns are free, how strongly extra cooldowns affect recovery, the minimum recovery speed, and whether multiple spent charges count separately.
+`shared_cooldown_load = false` is the default: each spell counts only its own spent and pending charges. With `shared_cooldown_load = true`, all spells contribute to the same penalty. `count_per_charge` only controls shared load: `true` counts charges, `false` counts distinct spells. Per-spell load always counts charges, including queued sequential charges. Per-spell overrides can still exclude a spell from load.
 
-Cooldown load never hard-locks casting. It only changes how quickly active cooldowns recover.
+Cooldown load changes recovery speed; it never directly blocks casting.
 
-## Recharge normalization
+## Timing normalization
 
-Very short and very long cooldowns can optionally be pulled toward a configurable middle range. This is a soft curve rather than a hard clamp, so fast spells remain fast and slow spells remain slow without extreme outliers dominating a build.
+Recharge and cast times have separate server config sections. Both support a signed `flat_modifer` in seconds, a curve center, separate short/long strengths, and a spread. The config key is spelled `flat_modifer`.
 
-Short and long cooldown normalization can be tuned separately.
+The flat adjustment applies to the base duration before normalization and native timing modifiers. It applies even when the section's `enabled` setting disables the curve. Adjusted durations have a one-tick minimum. Settings affect new casts and cooldowns; existing timers keep their recorded durations.
+
+```toml
+[recharge_normalization]
+    enabled = true
+    flat_modifer = 0.0
+    normal_recharge_seconds = 10.0
+    short_recharge_strength = 0.8
+    long_recharge_strength = 0.5
+    normalization_spread = 8.0
+
+[cast_time_normalization]
+    enabled = false
+    flat_modifer = 0.0
+    normal_cast_seconds = 1.0
+    short_cast_strength = 0.8
+    long_cast_strength = 0.5
+    normalization_spread = 0.8
+    affect_custom_cast_times = false
+    affect_no_cast_time_spells = false
+```
+
+Edit the existing sections rather than duplicating them. For example, recharge `flat_modifer = -2.5` subtracts 2.5 seconds from base cooldowns before gear reductions and the normalization curve. Cast-time `flat_modifer = 0.5` adds half a second before cast-speed modifiers.
+
+Normalization pulls short and long durations toward the center using a soft curve. Zero strength leaves that side unchanged. Cast-time adjustments change channel duration for continuous spells and preserve Iron's native cast-speed ratio.
+
+By default, cast-time adjustments skip spells with custom base/effective cast-time methods and spells with no cast time. `affect_custom_cast_times = true` opts custom implementations into both the flat adjustment and curve. `affect_no_cast_time_spells = true` lets zero-duration spells receive a delay, using a zero base and no cast-speed multiplier. Custom zero-duration spells require both options. These options do nothing if the curve is disabled and the flat adjustment is zero.
 
 ## HUD
 
@@ -82,7 +127,8 @@ While the mod is active:
 - Max Mana and Mana Cost display as Charge Capacity and Charge Cost in `SPELL_COOLDOWNS`, and retain their original labels in `CASTING_RESERVE`;
 - spell slots show remaining charges when a spell has more than one;
 - cooldown shading tracks the next returning charge; and
-- scroll tooltips show the normalized recharge duration; in `SPELL_COOLDOWNS`, scroll and active-spell cooldown previews also include the current capacity shortfall penalty.
+- scroll and active-spell tooltips show adjusted timing, including the current capacity shortfall penalty in `SPELL_COOLDOWNS`; and
+- the inscription table shows adjusted base timings without player gear modifiers.
 
 There is also an optional setting to hide unbound quick-cast slots without changing their actual quick-cast indices. The toggle is available from the inscription table.
 
@@ -93,6 +139,12 @@ Server gameplay settings are stored in:
 ```text
 config/temponottime-server.toml
 ```
+
+Saving this TOML applies changes live after NeoForge detects the edit. Connected clients refresh automatically, including idle players. No command, reconnect, world reload, or server restart is required. If the world has its own `serverconfig/temponottime-server.toml`, edit that file instead; it takes precedence over the global config. File watching must remain enabled in NeoForge's configuration.
+
+Modes, mechanic toggles, charge limits/formulas, reserve capacity, regeneration, cooldown load, and sequential/parallel recovery update live. Turning off inter-cast delays clears active delay timers. Disabling charges retains the longest remaining recharge per spell. Entering `SPELL_COOLDOWNS` clears banked reserve credit.
+
+Disabling Tempo releases its reserve, charges, and delay state while preserving Iron's native mana, cooldowns, and any ongoing cast. Re-enabling imports each remaining native cooldown as one recovering charge without charging reserve again. Timing and cast-cost adjustments apply to subsequent casts; casts already underway and recorded recharge/delay durations are not restarted or rescaled.
 
 Client HUD settings are stored in:
 
@@ -118,7 +170,7 @@ Reload the override file with:
 
 Tempo uses Iron's real spell definitions, costs, cooldowns, attributes, equipment modifiers, and addon spells, which means most content does not need a dedicated compatibility patch.
 
-Scrolls and mob casting keep Iron's normal behavior.
+Scrolls keep Iron's consumption and charge behavior but receive configured cast-time adjustments. Mob casting is unchanged.
 
 Simply Swords is optional. When installed, its Iron's-compatible weapon mana costs can use Casting Reserve and its effective item cooldown can become Tempo recharge debt. In `SPELL_COOLDOWNS` mode, weapon abilities bypass mana/reserve costs but retain Simply Swords' native item cooldowns; Instant Mana only accelerates Iron's spell charges. See [the Simply Swords notes](docs/SIMPLY_SWORDS_INTEGRATION.md) for the exact behavior.
 
@@ -149,7 +201,7 @@ Install Tempo Not Time on both the server and clients.
 
 ## API
 
-The public API exposes Casting Reserve, Casting Draw, spell charges, recovery state, and cast-reservation hooks for integrations that need to participate directly in the system.
+The public API exposes Casting Reserve, Casting Draw, spell charges, recovery state, and cast-reservation hooks for integrations that need to participate directly in the system. Server integrations should use `TempoNotTimeApi.castingRecoveryMultiplier(player, spell)` for the actual speed of a specific spell. The overload without a spell returns baseline recovery, including load only when shared load is enabled.
 
 ## Building
 

@@ -17,5 +17,10 @@ public final class TempoNotTimeApi {
     public static int maximumCharges(Player player, AbstractSpell spell, int spellLevel) { return CooldownManager.INSTANCE.maxCharges(player, spell, spellLevel); }
     public static int availableCharges(Player player, AbstractSpell spell, int spellLevel) { return CooldownManager.INSTANCE.availableCharges(player, spell, spellLevel); }
     public static List<CooldownInstance> activeCooldowns(Player player) { return List.copyOf(CooldownManager.INSTANCE.data(player).allInstances()); }
+    /** Server-side baseline speed, including load only when shared_cooldown_load is enabled. */
     public static double castingRecoveryMultiplier(Player player) { return CooldownManager.INSTANCE.recoveryMultiplier(player); }
+    /** Server-side current speed for this spell, including its individual or shared cooldown load. */
+    public static double castingRecoveryMultiplier(Player player, AbstractSpell spell) {
+        return CooldownManager.INSTANCE.recoveryMultiplier(player, spell.getSpellId());
+    }
 }

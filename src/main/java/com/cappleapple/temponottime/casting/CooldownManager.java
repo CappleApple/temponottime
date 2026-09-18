@@ -160,6 +160,11 @@ public final class CooldownManager {
 
     public long commitExternalManaUse(ServerPlayer player, Item sourceItem, double manaCost,
                                       double effectiveCooldownTicks) {
+        return commitExternalManaUse(player, sourceItem, manaCost, effectiveCooldownTicks, effectiveCooldownTicks);
+    }
+
+    public long commitExternalManaUse(ServerPlayer player, Item sourceItem, double manaCost,
+                                      double baseCooldownTicks, double effectiveCooldownTicks) {
         if (!manaCompatibilityActive() || !Double.isFinite(manaCost) || manaCost <= 0.0) {
             return -1L;
         }
@@ -168,10 +173,8 @@ public final class CooldownManager {
         boolean reserveApplies = ServerConfig.capacityEnabled()
                 && !(player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CAPACITY.get());
         double reservedDraw = reserveApplies ? data(player).consumeCastingReserveCredit(draw) : draw;
-        double duration = ExternalManaPolicy.rechargeDuration(effectiveCooldownTicks,
-                ServerConfig.RECHARGE_NORMALIZATION_ENABLED.get(), ServerConfig.NORMAL_RECHARGE_SECONDS.get(),
-                ServerConfig.SHORT_RECHARGE_STRENGTH.get(), ServerConfig.LONG_RECHARGE_STRENGTH.get(),
-                ServerConfig.NORMALIZATION_SPREAD.get());
+        double duration = ExternalManaPolicy.rechargeDuration(baseCooldownTicks, effectiveCooldownTicks,
+                ServerConfig.rechargeNormalization());
         String source = sourceItem == null ? "unknown" : BuiltInRegistries.ITEM.getKey(sourceItem).toString();
         String cooldownId = SimplySwordsManaCompatibility.COOLDOWN_PREFIX + source;
         CooldownInstance instance = data(player).add(cooldownId, 1, reservedDraw, duration,
@@ -187,13 +190,16 @@ public final class CooldownManager {
 
     public void retimeExternalManaUse(ServerPlayer player, Item sourceItem, long instanceId,
                                       double effectiveCooldownTicks) {
+        retimeExternalManaUse(player, sourceItem, instanceId, effectiveCooldownTicks, effectiveCooldownTicks);
+    }
+
+    public void retimeExternalManaUse(ServerPlayer player, Item sourceItem, long instanceId,
+                                      double baseCooldownTicks, double effectiveCooldownTicks) {
         if (!manaCompatibilityActive() || sourceItem == null || instanceId < 0L) {
             return;
         }
-        double duration = ExternalManaPolicy.rechargeDuration(effectiveCooldownTicks,
-                ServerConfig.RECHARGE_NORMALIZATION_ENABLED.get(), ServerConfig.NORMAL_RECHARGE_SECONDS.get(),
-                ServerConfig.SHORT_RECHARGE_STRENGTH.get(), ServerConfig.LONG_RECHARGE_STRENGTH.get(),
-                ServerConfig.NORMALIZATION_SPREAD.get());
+        double duration = ExternalManaPolicy.rechargeDuration(baseCooldownTicks, effectiveCooldownTicks,
+                ServerConfig.rechargeNormalization());
         String cooldownId = SimplySwordsManaCompatibility.COOLDOWN_PREFIX
                 + BuiltInRegistries.ITEM.getKey(sourceItem);
         data(player).forSpell(cooldownId).stream()
@@ -239,15 +245,33 @@ public final class CooldownManager {
     }
 
     public double loadMultiplier(Player player) {
-        if (ServerConfig.spellCooldownsOnly() || !ServerConfig.LOAD_ENABLED.get()) return 1.0;
+        if (!ServerConfig.LOAD_ENABLED.get() || !ServerConfig.SHARED_COOLDOWN_LOAD.get()) return 1.0;
         return CooldownLoadCalculator.multiplier(activeCooldownCount(player), ServerConfig.FREE_COOLDOWNS.get(),
                 ServerConfig.PENALTY_PER_ADDITIONAL_COOLDOWN.get(), ServerConfig.MINIMUM_RECOVERY_MULTIPLIER.get());
     }
 
+    public double loadMultiplier(Player player, String spellId) {
+        if (!ServerConfig.LOAD_ENABLED.get()) return 1.0;
+        if (ServerConfig.SHARED_COOLDOWN_LOAD.get()) return loadMultiplier(player);
+        PlayerCooldownData data = data(player);
+        int count = (int) data.forSpell(spellId).stream().filter(CooldownInstance::appliesLoad).count();
+        PendingCast pending = data.pendingCast();
+        if (pending != null && pending.appliesLoad() && pending.spellId().equals(spellId)) count++;
+        return CooldownLoadCalculator.multiplier(count, ServerConfig.FREE_COOLDOWNS.get(),
+                ServerConfig.PENALTY_PER_ADDITIONAL_COOLDOWN.get(), ServerConfig.MINIMUM_RECOVERY_MULTIPLIER.get());
+    }
+
+    /** Shared speed when shared load is enabled; otherwise the unpenalized baseline speed. */
     public double recoveryMultiplier(Player player) {
         double manaRegen = ServerConfig.CONVERT_MANA_REGEN.get() ? player.getAttributeValue(AttributeRegistry.MANA_REGEN) : 1.0;
         return RecoveryCalculator.multiplier(manaRegen, ServerConfig.MANA_REGEN_TO_RECOVERY_MULTIPLIER.get(),
                 ServerConfig.MAXIMUM_TOTAL_RECOVERY_MULTIPLIER.get(), loadMultiplier(player));
+    }
+
+    public double recoveryMultiplier(Player player, String spellId) {
+        double manaRegen = ServerConfig.CONVERT_MANA_REGEN.get() ? player.getAttributeValue(AttributeRegistry.MANA_REGEN) : 1.0;
+        return RecoveryCalculator.multiplier(manaRegen, ServerConfig.MANA_REGEN_TO_RECOVERY_MULTIPLIER.get(),
+                ServerConfig.MAXIMUM_TOTAL_RECOVERY_MULTIPLIER.get(), loadMultiplier(player, spellId));
     }
 
     public CastDecision canBeginCast(ServerPlayer player, AbstractSpell spell, int spellLevel, CastSource castSource) {
@@ -256,6 +280,9 @@ public final class CooldownManager {
         SpellOverride override = SpellOverrideManager.get(spell.getSpellId());
         boolean chargeGate = ServerConfig.CHARGES_ENABLED.get() && override.chargesAllowed(true)
                 && !(player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CHARGES.get());
+        if (chargeCastDelayTicks(player, spell.getSpellId()) > 0) {
+            return CastDecision.deny(CastDecision.Failure.CHARGE_CAST_DELAY);
+        }
         if (chargeGate && availableCharges(player, spell, spellLevel) <= 0) {
             return CastDecision.deny(CastDecision.Failure.NO_CHARGES);
         }
@@ -276,12 +303,18 @@ public final class CooldownManager {
         return reservationEvent.isCanceled() ? CastDecision.deny(CastDecision.Failure.EVENT_CANCELED) : CastDecision.allow();
     }
 
+    public int chargeCastDelayTicks(Player player, String spellId) {
+        return ServerConfig.enabled() && ServerConfig.CHARGE_CAST_DELAY_ENABLED.get()
+                && !(player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CHARGES.get())
+                ? data(player).chargeCastDelayTicks(spellId) : 0;
+    }
+
     public void beginSuccessfulCast(ServerPlayer player, AbstractSpell spell, int spellLevel, CastSource castSource) {
         if (!ServerConfig.enabled() || !manages(castSource)) return;
         if (isFollowupRecast(player, spell)) return;
         SpellOverride override = SpellOverrideManager.get(spell.getSpellId());
         double cost = castingDraw(player, spell, spellLevel);
-        double duration = rechargeDuration(spell, MagicManager.getEffectiveSpellCooldown(spell, player, castSource),
+        double duration = rechargeDuration(player, spell, MagicManager.getEffectiveSpellCooldown(spell, player, castSource),
                 override.cooldownMultiplier()) * chargeCooldownMultiplier(player, spell.getManaCost(spellLevel));
         boolean reserves = override.occupiesCastingReserve(true);
         boolean appliesLoad = override.appliesLoad(true);
@@ -300,7 +333,7 @@ public final class CooldownManager {
         SpellOverride override = SpellOverrideManager.get(spell.getSpellId());
         double cost = castingDraw(player, spell, spellLevel, eventManaCost);
         double penalty = chargeCooldownMultiplier(player, eventManaCost);
-        double duration = rechargeDuration(spell, MagicManager.getEffectiveSpellCooldown(spell, player, castSource),
+        double duration = rechargeDuration(player, spell, MagicManager.getEffectiveSpellCooldown(spell, player, castSource),
                 override.cooldownMultiplier()) * penalty;
         boolean reserves = pending != null && pending.spellId().equals(spell.getSpellId())
                 ? pending.occupiesCastingReserve()
@@ -316,6 +349,15 @@ public final class CooldownManager {
         instance.setCooldownPenaltyMultiplier(penalty);
         instance.setRecoveryManaCost(eventManaCost > 0.0 && Double.isFinite(eventManaCost)
                 ? eventManaCost : ServerConfig.ZERO_MANA_SPELL_CAPACITY_COST.get());
+        if (ServerConfig.CHARGE_CAST_DELAY_ENABLED.get()) {
+            MagicData magic = MagicData.getPlayerMagicData(player);
+            int castTicks = magic.isCasting() && spell.getSpellId().equals(magic.getCastingSpellId())
+                    ? magic.getCastDuration()
+                    : SpellTiming.effectiveCastTicks(spell, spellLevel, player, spell.getEffectiveCastTime(spellLevel, player));
+            data.startChargeCastDelay(spell.getSpellId(), ChargeCastDelayCalculator.ticks(castTicks,
+                    ServerConfig.CHARGE_CAST_DELAY_FLAT_BASE.get(), ServerConfig.CHARGE_CAST_DELAY_PERCENTAGE.get(),
+                    ServerConfig.MINIMUM_CHARGE_CAST_DELAY.get(), ServerConfig.MAXIMUM_CHARGE_CAST_DELAY.get()));
+        }
         data.setPendingCast(null);
         data.setCommittedCastingSpellId(spell.getSpellId());
         if (ServerConfig.DEBUG_LOGGING.get()) {
@@ -330,7 +372,7 @@ public final class CooldownManager {
                 .filter(CooldownInstance::waitingForIronCooldown)
                 .min(Comparator.comparingLong(CooldownInstance::id))
                 .ifPresent(instance -> {
-                    instance.activate(rechargeDuration(spell, effectiveDuration, override.cooldownMultiplier())
+                    instance.activate(rechargeDuration(player, spell, effectiveDuration, override.cooldownMultiplier())
                             * instance.cooldownPenaltyMultiplier());
                     data(player).markDirty();
                     sync(player);
@@ -343,8 +385,8 @@ public final class CooldownManager {
                 : 1.0;
     }
 
-    private static double rechargeDuration(AbstractSpell spell, double effectiveDurationTicks, double overrideMultiplier) {
-        double normalizedEffective = RechargeNormalizer.normalizeEffectiveTicks(spell.getSpellCooldown(), effectiveDurationTicks,
+    private static double rechargeDuration(Player player, AbstractSpell spell, double effectiveDurationTicks, double overrideMultiplier) {
+        double normalizedEffective = RechargeNormalizer.normalizeEffectiveTicks(SpellTiming.rechargeBaseTicks(spell.getSpellCooldown(), player), effectiveDurationTicks,
                 ServerConfig.RECHARGE_NORMALIZATION_ENABLED.get(), ServerConfig.NORMAL_RECHARGE_SECONDS.get(),
                 ServerConfig.SHORT_RECHARGE_STRENGTH.get(), ServerConfig.LONG_RECHARGE_STRENGTH.get(),
                 ServerConfig.NORMALIZATION_SPREAD.get());
@@ -385,7 +427,7 @@ public final class CooldownManager {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         PlayerCooldownData data = data(player);
         if (!ServerConfig.enabled()) {
-            if (!data.allInstances().isEmpty() || data.pendingCast() != null) {
+            if (!data.allInstances().isEmpty() || data.pendingCast() != null || !data.chargeCastDelays().isEmpty()) {
                 data.clear();
                 sync(player);
             }
@@ -400,6 +442,11 @@ public final class CooldownManager {
             data.setCommittedCastingSpellId(null);
         }
 
+        if (ServerConfig.CHARGE_CAST_DELAY_ENABLED.get()) {
+            data.tickChargeCastDelays(magicData.isCasting() ? magicData.getCastingSpellId() : null);
+        } else {
+            data.clearChargeCastDelays();
+        }
         reconcileChargeMode(data);
         activateOrphanedWaitingInstances(player, data, magicData);
         boolean completed = advanceCooldowns(player, data);
@@ -412,6 +459,7 @@ public final class CooldownManager {
                 && manaCompatibilityChanged(player);
 
         if (completed || data.isDirty() || manaCompatibilityChanged
+                || (!data.chargeCastDelays().isEmpty() && player.tickCount % 2 == 0)
                 || (!data.allInstances().isEmpty() && player.tickCount % PROGRESS_SYNC_INTERVAL == 0)) {
             sync(player);
         }
@@ -460,6 +508,47 @@ public final class CooldownManager {
         TempoNotTime.LOGGER.info("{} initialized against Iron's Spells 'n Spellbooks {}", TempoNotTime.DISPLAY_NAME, ironsVersion);
     }
 
+    /** Apply a validated config edit on the server thread, including players with no active cooldowns. */
+    public void applyServerConfig(ServerPlayer player, boolean previouslyEnabled) {
+        PlayerCooldownData data = data(player);
+        MagicData magic = MagicData.getPlayerMagicData(player);
+        if (!ServerConfig.enabled()) {
+            // Keep Iron's own timers and any cast already in progress; release only Tempo-owned state.
+            data.clear();
+            SimplySwordsManaCompatibility.clear(player);
+        } else {
+            if (!previouslyEnabled) {
+                data.clear();
+                // Enabling Tempo must not erase a native cooldown already in progress or bill its cost twice.
+                magic.getPlayerCooldowns().getSpellCooldowns().forEach((id, nativeCooldown) -> {
+                    AbstractSpell spell = SpellRegistry.getSpell(id);
+                    if (spell == SpellRegistry.none() || nativeCooldown.getCooldownRemaining() <= 0) return;
+                    int duration = Math.max(nativeCooldown.getSpellCooldown(), nativeCooldown.getCooldownRemaining());
+                    var instance = data.add(id, 1, 0, duration, false, false,
+                            SpellOverrideManager.get(id).appliesLoad(true));
+                    instance.advance(duration - nativeCooldown.getCooldownRemaining());
+                    instance.setRecoveryManaCost(spell.getManaCost(1));
+                });
+                if (magic.isCasting() && manages(magic.getCastSource())) {
+                    beginSuccessfulCast(player, SpellRegistry.getSpell(magic.getCastingSpellId()),
+                            magic.getCastingSpellLevel(), magic.getCastSource());
+                }
+            }
+            reconcileChargeMode(data);
+            if (!ServerConfig.CHARGE_CAST_DELAY_ENABLED.get()) data.clearChargeCastDelays();
+            if (ServerConfig.spellCooldownsOnly()) data.clearCastingReserveCredit();
+            if (ServerConfig.proratedManaRegen()) {
+                for (CooldownInstance instance : data.allInstances()) instance.updateProratedReserve();
+            }
+        }
+        lastFeedbackTicks.remove(player.getUUID());
+        sync(player);
+        // Refresh native displays too when returning to ordinary mana/cooldowns.
+        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                new io.redspace.ironsspellbooks.network.SyncManaPacket(magic));
+        magic.getPlayerCooldowns().syncToPlayer(player);
+    }
+
     public void clear(ServerPlayer player) {
         data(player).clear();
         MagicData.getPlayerMagicData(player).getPlayerCooldowns().clearCooldowns();
@@ -502,10 +591,17 @@ public final class CooldownManager {
 
     private boolean advanceCooldowns(ServerPlayer player, PlayerCooldownData data) {
         if (data.allInstances().isEmpty()) return false;
-        double amount = recoveryMultiplier(player);
         boolean completed = false;
-
-        for (List<CooldownInstance> instances : new ArrayList<>(data.cooldowns().values())) {
+        // Snapshot speeds before removing completed charges, so map iteration order cannot change shared load.
+        Map<String, Double> speeds = new HashMap<>();
+        boolean shared = ServerConfig.SHARED_COOLDOWN_LOAD.get();
+        double sharedSpeed = shared ? recoveryMultiplier(player) : 1.0;
+        for (String spellId : data.cooldowns().keySet()) {
+            speeds.put(spellId, shared ? sharedSpeed : recoveryMultiplier(player, spellId));
+        }
+        for (var entry : new ArrayList<>(data.cooldowns().entrySet())) {
+            List<CooldownInstance> instances = entry.getValue();
+            double amount = speeds.get(entry.getKey());
             if (ServerConfig.RECOVERY_MODE.get() == ServerConfig.RecoveryMode.PARALLEL) {
                 completed |= instances.removeIf(instance -> instance.advance(amount));
             } else {
@@ -533,7 +629,9 @@ public final class CooldownManager {
         long last = lastFeedbackTicks.getOrDefault(player.getUUID(), Long.MIN_VALUE / 2);
         if (now - last < 20) return;
         lastFeedbackTicks.put(player.getUUID(), now);
-        String key = failure == CastDecision.Failure.NO_CAPACITY
+        String key = failure == CastDecision.Failure.CHARGE_CAST_DELAY
+                ? "message.temponottime.charge_cast_delay"
+                : failure == CastDecision.Failure.NO_CAPACITY
                 ? "message.temponottime.not_enough_reserve"
                 : failure == CastDecision.Failure.EVENT_CANCELED
                 ? "message.temponottime.reservation_denied"

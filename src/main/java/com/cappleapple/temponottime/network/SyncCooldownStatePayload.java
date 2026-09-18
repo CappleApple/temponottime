@@ -2,6 +2,7 @@ package com.cappleapple.temponottime.network;
 
 import com.cappleapple.temponottime.TempoNotTime;
 import com.cappleapple.temponottime.casting.CooldownManager;
+import com.cappleapple.temponottime.casting.TimingNormalization;
 import com.cappleapple.temponottime.config.ServerConfig;
 import com.cappleapple.temponottime.compat.SimplySwordsManaCompatibility;
 import com.cappleapple.temponottime.data.CooldownInstance;
@@ -24,8 +25,10 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled, bo
                                        int activeRecharges, boolean rechargeNormalizationEnabled,
                                        double normalRechargeSeconds, double shortRechargeStrength,
                                        double longRechargeStrength, double normalizationSpread,
+                                       double rechargeFlatModifier, TimingNormalization castTimeNormalization,
                                        Map<String, SpellState> spells) implements CustomPacketPayload {
-    public record SpellState(int maximumCharges, int activeUses, int availableCharges, float nextRemainingFraction) {
+    public record SpellState(int maximumCharges, int activeUses, int availableCharges, float nextRemainingFraction,
+                             int chargeCastDelayTicks, float chargeCastDelayFraction) {
     }
 
     public static final Type<SyncCooldownStatePayload> TYPE = new Type<>(TempoNotTime.id("sync_cooldown_state"));
@@ -36,7 +39,9 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled, bo
         this(buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean(),
                 buffer.readBoolean(), buffer.readBoolean(), buffer.readDouble(), buffer.readDouble(),
                 buffer.readDouble(), buffer.readDouble(), buffer.readVarInt(), buffer.readBoolean(),
-                buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), readSpells(buffer));
+                buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), buffer.readDouble(),
+                new TimingNormalization(buffer.readBoolean(), buffer.readDouble(), buffer.readDouble(),
+                        buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), buffer.readBoolean(), buffer.readBoolean()), readSpells(buffer));
     }
 
     public void write(FriendlyByteBuf buffer) {
@@ -57,6 +62,15 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled, bo
         buffer.writeDouble(shortRechargeStrength);
         buffer.writeDouble(longRechargeStrength);
         buffer.writeDouble(normalizationSpread);
+        buffer.writeDouble(rechargeFlatModifier);
+        buffer.writeBoolean(castTimeNormalization.enabled());
+        buffer.writeDouble(castTimeNormalization.flatModifier());
+        buffer.writeDouble(castTimeNormalization.normalSeconds());
+        buffer.writeDouble(castTimeNormalization.shortStrength());
+        buffer.writeDouble(castTimeNormalization.longStrength());
+        buffer.writeDouble(castTimeNormalization.spreadSeconds());
+        buffer.writeBoolean(castTimeNormalization.affectCustomCastTimes());
+        buffer.writeBoolean(castTimeNormalization.affectNoCastTimeSpells());
         buffer.writeVarInt(spells.size());
         spells.forEach((id, state) -> {
             buffer.writeUtf(id);
@@ -64,6 +78,8 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled, bo
             buffer.writeVarInt(state.activeUses());
             buffer.writeVarInt(state.availableCharges());
             buffer.writeFloat(state.nextRemainingFraction());
+            buffer.writeVarInt(state.chargeCastDelayTicks());
+            buffer.writeFloat(state.chargeCastDelayFraction());
         });
     }
 
@@ -81,6 +97,8 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled, bo
             int level = instances.isEmpty() ? 1 : instances.getFirst().spellLevel();
             spellStates.put(id, createSpellState(player, id, level));
         });
+        manager.data(player).chargeCastDelays().keySet().forEach(id ->
+                spellStates.computeIfAbsent(id, key -> createSpellState(player, key, 1)));
         return new SyncCooldownStatePayload(ServerConfig.enabled(), ServerConfig.manaDisabled(), ServerConfig.spellCooldownsOnly(),
                 ServerConfig.capacityEnabled(), ServerConfig.CHARGES_ENABLED.get(),
                 ServerConfig.CONVERT_MAX_MANA.get(), ServerConfig.CONVERT_MANA_REGEN.get(),
@@ -89,12 +107,17 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled, bo
                 manager.activeCooldownCount(player), ServerConfig.RECHARGE_NORMALIZATION_ENABLED.get(),
                 ServerConfig.NORMAL_RECHARGE_SECONDS.get(), ServerConfig.SHORT_RECHARGE_STRENGTH.get(),
                 ServerConfig.LONG_RECHARGE_STRENGTH.get(), ServerConfig.NORMALIZATION_SPREAD.get(),
-                Map.copyOf(spellStates));
+                ServerConfig.RECHARGE_FLAT_MODIFIER.get(), ServerConfig.castTimeNormalization(), Map.copyOf(spellStates));
     }
 
     public static SyncCooldownStatePayload empty() {
         return new SyncCooldownStatePayload(false, false, false, false, false, false, false,
-                0.0, 0.0, 0.0, 1.0, 0, false, 10.0, 0.8, 0.5, 8.0, Map.of());
+                0.0, 0.0, 0.0, 1.0, 0, false, 10.0, 0.8, 0.5, 8.0, 0.0, TimingNormalization.UNCHANGED, Map.of());
+    }
+
+    public TimingNormalization rechargeNormalization() {
+        return new TimingNormalization(rechargeNormalizationEnabled, rechargeFlatModifier, normalRechargeSeconds,
+                shortRechargeStrength, longRechargeStrength, normalizationSpread);
     }
 
     @Override
@@ -111,7 +134,10 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled, bo
         if (manager.data(player).pendingCast() != null && manager.data(player).pendingCast().spellId().equals(id)) active++;
         int available = Math.max(0, maximum - active);
         float next = (float) instances.stream().mapToDouble(CooldownInstance::remainingFraction).min().orElse(0.0);
-        return new SpellState(maximum, active, available, next);
+        int delayTicks = manager.chargeCastDelayTicks(player, id);
+        var delay = manager.data(player).chargeCastDelays().get(id);
+        return new SpellState(maximum, active, available, next, delayTicks,
+                delayTicks > 0 && delay != null ? delay.remainingFraction() : 0);
     }
 
     private static Map<String, SpellState> readSpells(FriendlyByteBuf buffer) {
@@ -119,7 +145,7 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled, bo
         Map<String, SpellState> result = new LinkedHashMap<>();
         for (int i = 0; i < size; i++) {
             String id = buffer.readUtf();
-            result.put(id, new SpellState(buffer.readVarInt(), buffer.readVarInt(), buffer.readVarInt(), buffer.readFloat()));
+            result.put(id, new SpellState(buffer.readVarInt(), buffer.readVarInt(), buffer.readVarInt(), buffer.readFloat(), buffer.readVarInt(), buffer.readFloat()));
         }
         return Map.copyOf(result);
     }

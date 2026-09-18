@@ -1,6 +1,8 @@
 package com.cappleapple.temponottime.mixin;
 
 import com.cappleapple.temponottime.casting.CooldownManager;
+import com.cappleapple.temponottime.casting.SpellTiming;
+import net.minecraft.world.entity.LivingEntity;
 import com.cappleapple.temponottime.config.ServerConfig;
 import io.redspace.ironsspellbooks.api.magic.MagicData;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
@@ -18,6 +20,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(value = AbstractSpell.class, remap = false)
 public abstract class AbstractSpellMixin {
+    @Redirect(method = "attemptInitiateCast", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getEffectiveCastTime(ILnet/minecraft/world/entity/LivingEntity;)I"))
+    private int temponottime$normalizeCastTime(AbstractSpell spell, int level, LivingEntity entity) {
+        int effective = spell.getEffectiveCastTime(level, entity);
+        return entity instanceof Player player ? SpellTiming.effectiveCastTicks(spell, level, player, effective) : effective;
+    }
+
     @Redirect(method = "canBeCastedBy", at = @At(value = "INVOKE", target = "Lio/redspace/ironsspellbooks/api/magic/MagicData;getMana()F"))
     private float temponottime$ignoreManaRequirement(MagicData magicData, int spellLevel, CastSource castSource,
                                                     MagicData ignoredMagicData, Player player) {

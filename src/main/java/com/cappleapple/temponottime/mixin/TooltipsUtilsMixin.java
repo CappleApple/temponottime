@@ -2,6 +2,8 @@ package com.cappleapple.temponottime.mixin;
 
 import com.cappleapple.temponottime.casting.ChargeCooldownPenalty;
 import com.cappleapple.temponottime.casting.RechargeNormalizer;
+import com.cappleapple.temponottime.casting.SpellTiming;
+import net.minecraft.world.entity.LivingEntity;
 import com.cappleapple.temponottime.network.ClientCooldownState;
 import io.redspace.ironsspellbooks.api.registry.AttributeRegistry;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
@@ -25,6 +27,49 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(value = TooltipsUtils.class, remap = false)
 public abstract class TooltipsUtilsMixin {
+    @Redirect(method = "formatActiveSpellTooltip", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getCastType()Lio/redspace/ironsspellbooks/api/spells/CastType;"))
+    private static CastType temponottime$showDelayedInstantCast(AbstractSpell spell, ItemStack stack, SpellData data,
+                                                               CastSource source, LocalPlayer player) {
+        return temponottime$displayCastType(spell, spell.getLevelFor(data.getLevel(), player), player);
+    }
+
+    @Redirect(method = "formatScrollTooltip", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getCastType()Lio/redspace/ironsspellbooks/api/spells/CastType;"))
+    private static CastType temponottime$showDelayedInstantScroll(AbstractSpell spell, ItemStack stack, Player player) {
+        int level = spell.getLevelFor(ISpellContainer.get(stack).getSpellAtIndex(0).getLevel(), player);
+        return temponottime$displayCastType(spell, level, player);
+    }
+
+    @Unique
+    private static CastType temponottime$displayCastType(AbstractSpell spell, int level, Player player) {
+        CastType type = spell.getCastType();
+        if (!ClientCooldownState.enabled() || !ClientCooldownState.snapshot().castTimeNormalization().affectNoCastTimeSpells()) return type;
+        return type == CastType.INSTANT && SpellTiming.effectiveCastTicks(spell, level, player,
+                spell.getEffectiveCastTime(level, player)) > 0 ? CastType.LONG : type;
+    }
+
+    @Inject(method = "getCastTimeComponent", at = @At("HEAD"), cancellable = true)
+    private static void temponottime$describeDelayedInstant(CastType type, String time,
+                                                           CallbackInfoReturnable<MutableComponent> callback) {
+        if (type != CastType.INSTANT || !ClientCooldownState.enabled()
+                || !ClientCooldownState.snapshot().castTimeNormalization().affectNoCastTimeSpells()) return;
+        try {
+            if (Double.parseDouble(time) > 0) {
+                callback.setReturnValue(Component.translatable("tooltip.irons_spellbooks.cast_long", time));
+            }
+        } catch (NumberFormatException ignored) {
+            // Addons may supply formatted text instead of Iron's numeric duration.
+        }
+    }
+
+    @Redirect(method = {"formatScrollTooltip", "formatActiveSpellTooltip"}, at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getEffectiveCastTime(ILnet/minecraft/world/entity/LivingEntity;)I"))
+    private static int temponottime$previewCastTime(AbstractSpell spell, int level, LivingEntity entity) {
+        int effective = spell.getEffectiveCastTime(level, entity);
+        return entity instanceof Player player ? SpellTiming.effectiveCastTicks(spell, level, player, effective) : effective;
+    }
+
     @Redirect(method = "formatScrollTooltip", at = @At(value = "INVOKE",
             target = "Lio/redspace/ironsspellbooks/capabilities/magic/MagicManager;getEffectiveSpellCooldown(Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;Lnet/minecraft/world/entity/player/Player;Lio/redspace/ironsspellbooks/api/spells/CastSource;)I"))
     private static int temponottime$showNormalizedScrollCooldown(AbstractSpell spell, Player player,
@@ -39,7 +84,7 @@ public abstract class TooltipsUtilsMixin {
     private static int temponottime$showChargeCooldown(AbstractSpell spell, Player player, CastSource castSource,
                                                        ItemStack stack, SpellData spellData,
                                                        CastSource tooltipSource, LocalPlayer tooltipPlayer) {
-        if (!ClientCooldownState.enabled() || !ClientCooldownState.snapshot().spellCooldownsOnly()) {
+        if (!ClientCooldownState.enabled()) {
             return MagicManager.getEffectiveSpellCooldown(spell, player, castSource);
         }
         return temponottime$previewCooldown(spell, player, castSource, spell.getLevelFor(spellData.getLevel(), player));
@@ -50,7 +95,7 @@ public abstract class TooltipsUtilsMixin {
         int effectiveTicks = MagicManager.getEffectiveSpellCooldown(spell, player, castSource);
         var snapshot = ClientCooldownState.snapshot();
         if (!snapshot.enabled()) return effectiveTicks;
-        double normalized = RechargeNormalizer.normalizeEffectiveTicks(spell.getSpellCooldown(), effectiveTicks,
+        double normalized = RechargeNormalizer.normalizeEffectiveTicks(SpellTiming.rechargeBaseTicks(spell.getSpellCooldown(), player), effectiveTicks,
                 snapshot.rechargeNormalizationEnabled(), snapshot.normalRechargeSeconds(),
                 snapshot.shortRechargeStrength(), snapshot.longRechargeStrength(), snapshot.normalizationSpread());
         if (snapshot.spellCooldownsOnly()) {

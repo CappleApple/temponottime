@@ -92,6 +92,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 jar {
+    from('LICENSE')
     exclude 'com/cappleapple/temponottime/gametest/**'
     manifest {
         attributes([

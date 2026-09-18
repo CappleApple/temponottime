@@ -4,6 +4,7 @@ import com.cappleapple.temponottime.casting.CooldownManager;
 import com.cappleapple.temponottime.command.TempoCommands;
 import com.cappleapple.temponottime.config.ClientConfig;
 import com.cappleapple.temponottime.config.ServerConfig;
+import com.cappleapple.temponottime.config.ServerConfigReloadHandler;
 import com.cappleapple.temponottime.network.TempoNetwork;
 import com.cappleapple.temponottime.registry.TempoRegistries;
 import com.mojang.logging.LogUtils;
@@ -25,11 +26,13 @@ public final class TempoNotTime {
         TempoRegistries.register(modBus);
         modBus.addListener(TempoRegistries::addPlayerAttributes);
         modBus.addListener(TempoNetwork::register);
+        modBus.addListener(ServerConfigReloadHandler::onReload);
 
         container.registerConfig(ModConfig.Type.SERVER, ServerConfig.SPEC, MOD_ID + "-server.toml");
         container.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC, MOD_ID + "-client.toml");
 
         NeoForge.EVENT_BUS.register(CooldownManager.INSTANCE);
+        NeoForge.EVENT_BUS.register(ServerConfigReloadHandler.class);
         NeoForge.EVENT_BUS.register(TempoCommands.class);
         LOGGER.info("Initializing {}", DISPLAY_NAME);
     }

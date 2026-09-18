@@ -15,7 +15,7 @@ public abstract class SimplySwordsApiMixin {
     @Inject(method = "setWeaponCooldown", at = @At("HEAD"), require = 0)
     private static void temponottime$beginCooldownCapture(LivingEntity actor, ItemStack stack,
                                                           int baseCooldownTicks, CallbackInfo callback) {
-        SimplySwordsManaCompatibility.beginCooldownCapture(actor, stack);
+        SimplySwordsManaCompatibility.beginCooldownCapture(actor, stack, baseCooldownTicks);
     }
 
     @Inject(method = "setWeaponCooldown", at = @At("RETURN"), require = 0)

@@ -11,9 +11,10 @@ import java.util.List;
 import java.util.Map;
 
 public final class PlayerCooldownData {
-    public static final int DATA_VERSION = 4;
+    public static final int DATA_VERSION = 5;
 
     private final Map<String, List<CooldownInstance>> cooldowns = new LinkedHashMap<>();
+    private final Map<String, ChargeCastDelay> chargeCastDelays = new LinkedHashMap<>();
     private long nextId = 1;
     private transient PendingCast pendingCast;
     private transient String committedCastingSpellId;
@@ -23,6 +24,26 @@ public final class PlayerCooldownData {
 
     public Map<String, List<CooldownInstance>> cooldowns() {
         return cooldowns;
+    }
+
+    public Map<String, ChargeCastDelay> chargeCastDelays() { return java.util.Collections.unmodifiableMap(chargeCastDelays); }
+    public int chargeCastDelayTicks(String spellId) {
+        var delay = chargeCastDelays.get(spellId);
+        return delay == null ? 0 : delay.remainingTicks();
+    }
+    public void startChargeCastDelay(String spellId, int ticks) {
+        if (ticks > 0) chargeCastDelays.put(spellId, new ChargeCastDelay(ticks, ticks));
+        else chargeCastDelays.remove(spellId);
+        dirty = true;
+    }
+    public boolean tickChargeCastDelays(String stillCastingSpellId) {
+        chargeCastDelays.replaceAll((spell, delay) -> spell.equals(stillCastingSpellId) ? delay : delay.tick());
+        boolean expired = chargeCastDelays.values().removeIf(delay -> delay.remainingTicks() <= 0);
+        if (expired) dirty = true;
+        return expired;
+    }
+    public void clearChargeCastDelays() {
+        if (!chargeCastDelays.isEmpty()) { chargeCastDelays.clear(); dirty = true; }
     }
 
     public List<CooldownInstance> forSpell(String spellId) {
@@ -47,6 +68,7 @@ public final class PlayerCooldownData {
 
     public void clear() {
         cooldowns.clear();
+        chargeCastDelays.clear();
         castingReserveCredit = 0.0;
         castingReserveOverchargeLimit = 0.0;
         pendingCast = null;
@@ -65,6 +87,14 @@ public final class PlayerCooldownData {
     public void clearCastTracking() { pendingCast = null; committedCastingSpellId = null; }
     public double castingReserveCredit() { return castingReserveCredit; }
     public double castingReserveOverchargeLimit() { return castingReserveOverchargeLimit; }
+
+    public void clearCastingReserveCredit() {
+        if (castingReserveCredit != 0 || castingReserveOverchargeLimit != 0) {
+            castingReserveCredit = 0;
+            castingReserveOverchargeLimit = 0;
+            dirty = true;
+        }
+    }
 
     public void addCastingReserveCredit(double amount, double occupiedReserve) {
         if (!Double.isFinite(amount) || amount <= 0.0) return;
@@ -93,6 +123,7 @@ public final class PlayerCooldownData {
     public void copyFrom(PlayerCooldownData other) {
         clear();
         nextId = other.nextId;
+        chargeCastDelays.putAll(other.chargeCastDelays);
         castingReserveCredit = other.castingReserveCredit;
         castingReserveOverchargeLimit = other.castingReserveOverchargeLimit;
         other.cooldowns.forEach((spell, instances) -> {
@@ -116,11 +147,28 @@ public final class PlayerCooldownData {
             list.add(instance.save());
         }
         root.put("instances", list);
+        CompoundTag delays = new CompoundTag();
+        chargeCastDelays.forEach((spell, delay) -> {
+            CompoundTag value = new CompoundTag();
+            value.putInt("duration_ticks", delay.durationTicks());
+            value.putInt("remaining_ticks", delay.remainingTicks());
+            delays.put(spell, value);
+        });
+        root.put("charge_cast_delays", delays);
         return root;
     }
 
     public void load(CompoundTag root) {
         cooldowns.clear();
+        chargeCastDelays.clear();
+        pendingCast = null;
+        committedCastingSpellId = null;
+        CompoundTag delays = root.getCompound("charge_cast_delays");
+        for (String spell : delays.getAllKeys()) {
+            CompoundTag value = delays.getCompound(spell);
+            var delay = new ChargeCastDelay(value.getInt("duration_ticks"), value.getInt("remaining_ticks"));
+            if (!spell.isBlank() && delay.remainingTicks() > 0) chargeCastDelays.put(spell, delay);
+        }
         nextId = Math.max(1, root.getLong("next_id"));
         castingReserveCredit = safeNonNegative(root.getDouble("casting_reserve_credit"));
         castingReserveOverchargeLimit = safeNonNegative(root.getDouble("casting_reserve_overcharge_limit"));

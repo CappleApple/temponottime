@@ -1,6 +1,7 @@
 package com.cappleapple.temponottime.config;
 
 import com.cappleapple.temponottime.casting.ChargeRequirementFormula;
+import com.cappleapple.temponottime.casting.TimingNormalization;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 public final class ServerConfig {
@@ -45,7 +46,14 @@ public final class ServerConfig {
     public static final ModConfigSpec.IntValue MAXIMUM_CHARGES;
     public static final ModConfigSpec.EnumValue<RecoveryMode> RECOVERY_MODE;
 
+    public static final ModConfigSpec.BooleanValue CHARGE_CAST_DELAY_ENABLED;
+    public static final ModConfigSpec.DoubleValue MINIMUM_CHARGE_CAST_DELAY;
+    public static final ModConfigSpec.DoubleValue MAXIMUM_CHARGE_CAST_DELAY;
+    public static final ModConfigSpec.DoubleValue CHARGE_CAST_DELAY_PERCENTAGE;
+    public static final ModConfigSpec.DoubleValue CHARGE_CAST_DELAY_FLAT_BASE;
+
     public static final ModConfigSpec.BooleanValue LOAD_ENABLED;
+    public static final ModConfigSpec.BooleanValue SHARED_COOLDOWN_LOAD;
     public static final ModConfigSpec.IntValue FREE_COOLDOWNS;
     public static final ModConfigSpec.DoubleValue PENALTY_PER_ADDITIONAL_COOLDOWN;
     public static final ModConfigSpec.DoubleValue MINIMUM_RECOVERY_MULTIPLIER;
@@ -55,10 +63,20 @@ public final class ServerConfig {
     public static final ModConfigSpec.DoubleValue MAXIMUM_TOTAL_RECOVERY_MULTIPLIER;
 
     public static final ModConfigSpec.BooleanValue RECHARGE_NORMALIZATION_ENABLED;
+    public static final ModConfigSpec.DoubleValue RECHARGE_FLAT_MODIFIER;
     public static final ModConfigSpec.DoubleValue NORMAL_RECHARGE_SECONDS;
     public static final ModConfigSpec.DoubleValue SHORT_RECHARGE_STRENGTH;
     public static final ModConfigSpec.DoubleValue LONG_RECHARGE_STRENGTH;
     public static final ModConfigSpec.DoubleValue NORMALIZATION_SPREAD;
+
+    public static final ModConfigSpec.BooleanValue CAST_TIME_NORMALIZATION_ENABLED;
+    public static final ModConfigSpec.DoubleValue CAST_TIME_FLAT_MODIFIER;
+    public static final ModConfigSpec.BooleanValue AFFECT_CUSTOM_CAST_TIMES;
+    public static final ModConfigSpec.BooleanValue AFFECT_NO_CAST_TIME_SPELLS;
+    public static final ModConfigSpec.DoubleValue NORMAL_CAST_SECONDS;
+    public static final ModConfigSpec.DoubleValue SHORT_CAST_STRENGTH;
+    public static final ModConfigSpec.DoubleValue LONG_CAST_STRENGTH;
+    public static final ModConfigSpec.DoubleValue CAST_NORMALIZATION_SPREAD;
 
     public static final ModConfigSpec.BooleanValue DEBUG_LOGGING;
 
@@ -71,7 +89,7 @@ public final class ServerConfig {
         CASTING_MODE = builder.comment(
                         "CASTING_RESERVE keeps the shared reserve system.",
                         "SPELL_COOLDOWNS uses independent spell charges and recharge timers, hides the mana bar,",
-                        "and disables mana spending, shared reserve limits, and cooldown load regardless of their toggles.",
+                        "and disables mana spending and shared reserve limits regardless of their toggles.",
                         "Max Mana and Mana Regeneration conversion toggles still control charge scaling and recovery speed.",
                         "Instant Mana advances each spell's recharge by restored mana / that cast's mana cost.")
                 .defineEnum("casting_mode", CastingMode.CASTING_RESERVE);
@@ -132,16 +150,35 @@ public final class ServerConfig {
                 .defineEnum("recovery_mode", RecoveryMode.SEQUENTIAL);
         builder.pop();
 
+        builder.push("delay_between_charge_casts");
+        CHARGE_CAST_DELAY_ENABLED = builder.comment("Require a short delay before casting the same spell again after a successful cast.",
+                        "Other spells and native follow-up recasts remain available. The timer pauses while that spell is still casting.")
+                .define("enabled", true);
+        MINIMUM_CHARGE_CAST_DELAY = builder.comment("Minimum delay in seconds.")
+                .defineInRange("min_delay_seconds", 0.1, 0.0, 86_400.0);
+        MAXIMUM_CHARGE_CAST_DELAY = builder.comment("Maximum delay in seconds. If below the minimum, the minimum takes precedence.")
+                .defineInRange("max_delay_seconds", 10.0, 0.0, 86_400.0);
+        CHARGE_CAST_DELAY_PERCENTAGE = builder.comment("Percentage of the actual cast duration added to the delay; 10 means 10%.")
+                .defineInRange("delay_modifier_percentage", 10.0, 0.0, 10_000.0);
+        CHARGE_CAST_DELAY_FLAT_BASE = builder.comment("Signed seconds added before the cast-time percentage and min/max clamp.",
+                        "Delay = clamp(flat_base_modifier + cast_seconds * delay_modifier_percentage / 100, min, max), rounded up to a tick.")
+                .defineInRange("flat_base_modifier", 0.5, -86_400.0, 86_400.0);
+        builder.pop();
+
         builder.push("cooldown_load");
         LOAD_ENABLED = builder.comment("Enable cooldown load feature true/false.")
                 .define("enabled", false);
+        SHARED_COOLDOWN_LOAD = builder.comment(
+                        "False applies load independently to each spell, counting that spell's spent/pending charges.",
+                        "True uses one shared cooldown load for all spells. Applies in both casting modes when load is enabled.")
+                .define("shared_cooldown_load", false);
         FREE_COOLDOWNS = builder.comment("Number of active cooldowns before load penalties begin.")
                 .defineInRange("free_cooldowns", 1, 0, 10_000);
         PENALTY_PER_ADDITIONAL_COOLDOWN = builder.comment("Penalty in 1 / (1 + penalty * additional cooldowns).")
                 .defineInRange("penalty_per_additional_cooldown", 0.20, 0.0, 1000.0);
         MINIMUM_RECOVERY_MULTIPLIER = builder.comment("Floor preventing load from freezing Casting Recovery.")
                 .defineInRange("minimum_recovery_multiplier", 0.25, 0.0001, 1.0);
-        COUNT_PER_CHARGE = builder.comment("Enable per-charge cooldown load counting true/false.")
+        COUNT_PER_CHARGE = builder.comment("For shared load only: count each spent charge (true) or each distinct spell (false). Per-spell load always counts charges.")
                 .define("count_per_charge", true);
         builder.pop();
 
@@ -155,6 +192,10 @@ public final class ServerConfig {
         builder.push("recharge_normalization");
         RECHARGE_NORMALIZATION_ENABLED = builder.comment("Enable recharge normalization feature true/false.")
                 .define("enabled", true);
+        RECHARGE_FLAT_MODIFIER = builder.comment(
+                        "Seconds added to base cooldowns before normalization and cooldown modifiers; negative values shorten them.",
+                        "Applied even when the normalization curve is disabled. Resulting durations have a one-tick minimum.")
+                .defineInRange("flat_modifer", 0.0, -86_400.0, 86_400.0);
         NORMAL_RECHARGE_SECONDS = builder.comment("Recharge duration considered normal and used as the center of the curve.")
                 .defineInRange("normal_recharge_seconds", 10.0, 0.05, 86_400.0);
         SHORT_RECHARGE_STRENGTH = builder.comment("How aggressively shorter recharges are compressed toward normal. Zero leaves them unchanged.")
@@ -163,6 +204,33 @@ public final class ServerConfig {
                 .defineInRange("long_recharge_strength", 0.5, 0.0, 1000.0);
         NORMALIZATION_SPREAD = builder.comment("Breadth of the relatively unmodified area around normal recharge.")
                 .defineInRange("normalization_spread", 8.0, 0.001, 86_400.0);
+        builder.pop();
+
+        builder.push("cast_time_normalization");
+        CAST_TIME_NORMALIZATION_ENABLED = builder.comment(
+                        "Enable the cast-time normalization curve for player spells.",
+                        "For continuous spells, cast time is channel duration. Mob casting is unchanged.")
+                .define("enabled", false);
+        CAST_TIME_FLAT_MODIFIER = builder.comment(
+                        "Seconds added to eligible base cast times before normalization and cast-speed modifiers.",
+                        "Applied even when the curve is disabled. Negative values shorten casts; minimum one tick.")
+                .defineInRange("flat_modifer", 0.0, -86_400.0, 86_400.0);
+        AFFECT_CUSTOM_CAST_TIMES = builder.comment(
+                        "Apply cast-time adjustments to spells overriding getCastTime or getEffectiveCastTime, including inherited overrides.",
+                        "False preserves custom and animation-bound timing. Applies to the flat modifier and curve.")
+                .define("affect_custom_cast_times", false);
+        AFFECT_NO_CAST_TIME_SPELLS = builder.comment(
+                        "Allow the flat modifier and curve to give zero-duration spells a cast delay. False keeps them instant.",
+                        "Uses a zero base and no cast-speed multiplier. Custom zero-duration spells also require affect_custom_cast_times.")
+                .define("affect_no_cast_time_spells", false);
+        NORMAL_CAST_SECONDS = builder.comment("Cast time at the center of the normalization curve, in seconds.")
+                .defineInRange("normal_cast_seconds", 1.0, 0.05, 86_400.0);
+        SHORT_CAST_STRENGTH = builder.comment("Compression strength for shorter casts. Zero leaves them unchanged.")
+                .defineInRange("short_cast_strength", 0.8, 0.0, 1000.0);
+        LONG_CAST_STRENGTH = builder.comment("Compression strength for longer casts. Zero leaves them unchanged.")
+                .defineInRange("long_cast_strength", 0.5, 0.0, 1000.0);
+        CAST_NORMALIZATION_SPREAD = builder.comment("Breadth in seconds of the relatively unmodified area around normal cast time.")
+                .defineInRange("normalization_spread", 0.8, 0.001, 86_400.0);
         builder.pop();
 
         builder.push("diagnostics");
@@ -174,6 +242,17 @@ public final class ServerConfig {
     }
 
     private ServerConfig() {
+    }
+
+    public static TimingNormalization rechargeNormalization() {
+        return new TimingNormalization(RECHARGE_NORMALIZATION_ENABLED.get(), RECHARGE_FLAT_MODIFIER.get(),
+                NORMAL_RECHARGE_SECONDS.get(), SHORT_RECHARGE_STRENGTH.get(), LONG_RECHARGE_STRENGTH.get(), NORMALIZATION_SPREAD.get());
+    }
+
+    public static TimingNormalization castTimeNormalization() {
+        return new TimingNormalization(CAST_TIME_NORMALIZATION_ENABLED.get(), CAST_TIME_FLAT_MODIFIER.get(),
+                NORMAL_CAST_SECONDS.get(), SHORT_CAST_STRENGTH.get(), LONG_CAST_STRENGTH.get(), CAST_NORMALIZATION_SPREAD.get(),
+                AFFECT_CUSTOM_CAST_TIMES.get(), AFFECT_NO_CAST_TIME_SPELLS.get());
     }
 
     public static boolean spellCooldownsOnly() {

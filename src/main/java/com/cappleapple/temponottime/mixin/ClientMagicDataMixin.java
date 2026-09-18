@@ -38,7 +38,8 @@ public abstract class ClientMagicDataMixin {
         }
         var state = ClientCooldownState.spells().get(spell.getSpellId());
         if (state != null) {
-            callback.setReturnValue(state.activeUses() > 0 ? state.nextRemainingFraction() : 0.0F);
+            callback.setReturnValue(state.chargeCastDelayTicks() > 0 && state.availableCharges() > 0
+                    ? state.chargeCastDelayFraction() : state.activeUses() > 0 ? state.nextRemainingFraction() : 0.0F);
         }
     }
 }
