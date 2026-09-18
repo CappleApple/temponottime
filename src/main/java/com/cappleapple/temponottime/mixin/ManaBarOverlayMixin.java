@@ -39,6 +39,7 @@ public abstract class ManaBarOverlayMixin {
             return;
         }
         callback.cancel();
+        if (ClientCooldownState.snapshot().spellCooldownsOnly()) return;
 
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null || minecraft.options.hideGui || minecraft.player.isSpectator()) {

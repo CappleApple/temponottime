@@ -6,7 +6,7 @@ The bridge was written against the `Architectury-1.21` source around commit `9da
 
 ## What changes
 
-When Tempo is enabled and normal mana consumption is disabled:
+In `CASTING_RESERVE` mode, when Tempo is enabled and normal mana consumption is disabled:
 
 - Simply Swords weapon mana costs are treated as **Casting Draw**.
 - Affordability checks use the player's available Casting Reserve.
@@ -14,7 +14,9 @@ When Tempo is enabled and normal mana consumption is disabled:
 - The final effective item cooldown becomes a Tempo recovery instance.
 - That recovery participates in Casting Reserve occupancy, cooldown load, Casting Recovery, normalization, persistence, and synchronization.
 
-When Tempo is disabled (or mana consumption is left enabled), Simply Swords keeps its normal behavior.
+In `SPELL_COOLDOWNS` mode, mana spending and shared reserve gates are bypassed regardless of `disable_mana_consumption`. Simply Swords retains its native item cooldowns. Instant Mana only accelerates Iron's spell recharge queues.
+
+When Tempo is disabled, or shared-reserve mode leaves mana consumption enabled, Simply Swords keeps its normal behavior.
 
 ## How the bridge works
 
@@ -32,7 +34,7 @@ Simply Swords recovery entries use internal IDs below:
 temponottime:simply_swords/
 ```
 
-They count toward reserve usage and cooldown load, but they are not exposed as fake Iron's spells. They therefore do not appear in spell charge maps or quick-cast HUD slots.
+In shared-reserve mode, they count toward reserve usage and cooldown load, but they are not exposed as fake Iron's spells. They therefore do not appear in spell charge maps or quick-cast HUD slots.
 
 ## Mixins
 

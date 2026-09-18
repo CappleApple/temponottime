@@ -16,7 +16,7 @@ public abstract class MagicManagerMixin {
     @Inject(method = "regenPlayerMana", at = @At("HEAD"), cancellable = true)
     private void temponottime$disableManaRegeneration(ServerPlayer player, MagicData magicData,
                                                        CallbackInfoReturnable<Boolean> callback) {
-        if (ServerConfig.enabled() && ServerConfig.DISABLE_MANA_CONSUMPTION.get()) {
+        if (ServerConfig.enabled() && ServerConfig.manaDisabled()) {
             callback.setReturnValue(false);
         }
     }
@@ -25,7 +25,7 @@ public abstract class MagicManagerMixin {
             target = "Lio/redspace/ironsspellbooks/api/magic/MagicData;getMana()F"))
     private float temponottime$ignoreContinuousCastManaFloor(MagicData magicData) {
         return ServerConfig.enabled()
-                && ServerConfig.DISABLE_MANA_CONSUMPTION.get()
+                && ServerConfig.manaDisabled()
                 && CooldownManager.manages(magicData.getCastSource())
                 ? Float.MAX_VALUE
                 : magicData.getMana();

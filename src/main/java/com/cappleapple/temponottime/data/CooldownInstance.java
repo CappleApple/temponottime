@@ -9,6 +9,7 @@ public final class CooldownInstance {
     private final double castingDraw;
     private final boolean occupiesCastingReserve;
     private final boolean appliesLoad;
+    private double recoveryManaCost;
     private double durationTicks;
     private double progressTicks;
     private boolean waitingForIronCooldown;
@@ -19,6 +20,7 @@ public final class CooldownInstance {
         this.spellId = spellId;
         this.spellLevel = Math.max(1, spellLevel);
         this.castingDraw = safeNonNegative(castingDraw);
+        this.recoveryManaCost = Math.max(1.0, this.castingDraw);
         this.durationTicks = safeDuration(durationTicks);
         this.progressTicks = Math.clamp(Double.isFinite(progressTicks) ? progressTicks : 0.0, 0.0, this.durationTicks);
         this.waitingForIronCooldown = waitingForIronCooldown;
@@ -31,6 +33,10 @@ public final class CooldownInstance {
     public int spellLevel() { return spellLevel; }
     public double castingDraw() { return castingDraw; }
     public double durationTicks() { return durationTicks; }
+    public double recoveryManaCost() { return recoveryManaCost; }
+    public void setRecoveryManaCost(double manaCost) {
+        recoveryManaCost = Double.isFinite(manaCost) && manaCost > 0.0 ? manaCost : 1.0;
+    }
     public double progressTicks() { return progressTicks; }
     public boolean waitingForIronCooldown() { return waitingForIronCooldown; }
     public boolean occupiesCastingReserve() { return occupiesCastingReserve; }
@@ -64,6 +70,7 @@ public final class CooldownInstance {
         tag.putInt("level", spellLevel);
         tag.putDouble("cost", castingDraw);
         tag.putDouble("duration", durationTicks);
+        tag.putDouble("recovery_mana_cost", recoveryManaCost);
         tag.putDouble("progress", progressTicks);
         tag.putBoolean("waiting", waitingForIronCooldown);
         tag.putBoolean("reserves", occupiesCastingReserve);
@@ -72,9 +79,11 @@ public final class CooldownInstance {
     }
 
     public static CooldownInstance load(CompoundTag tag) {
-        return new CooldownInstance(tag.getLong("id"), tag.getString("spell"), tag.getInt("level"),
+        CooldownInstance instance = new CooldownInstance(tag.getLong("id"), tag.getString("spell"), tag.getInt("level"),
                 tag.getDouble("cost"), tag.getDouble("duration"), tag.getDouble("progress"),
                 tag.getBoolean("waiting"), tag.getBoolean("reserves"), tag.getBoolean("load"));
+        if (tag.contains("recovery_mana_cost")) instance.setRecoveryManaCost(tag.getDouble("recovery_mana_cost"));
+        return instance;
     }
 
     private static double safeNonNegative(double value) {

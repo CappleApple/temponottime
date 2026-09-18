@@ -21,7 +21,7 @@ public abstract class AbstractSpellMixin {
     @Redirect(method = "canBeCastedBy", at = @At(value = "INVOKE", target = "Lio/redspace/ironsspellbooks/api/magic/MagicData;getMana()F"))
     private float temponottime$ignoreManaRequirement(MagicData magicData, int spellLevel, CastSource castSource,
                                                     MagicData ignoredMagicData, Player player) {
-        return ServerConfig.enabled() && ServerConfig.DISABLE_MANA_CONSUMPTION.get() && castSource.consumesMana()
+        return ServerConfig.enabled() && ServerConfig.manaDisabled() && castSource.consumesMana()
                 ? Float.MAX_VALUE
                 : magicData.getMana();
     }
@@ -46,7 +46,7 @@ public abstract class AbstractSpellMixin {
     private void temponottime$skipManaSpend(MagicData magicData, float mana,
                                             Level level, int spellLevel, ServerPlayer player,
                                             CastSource castSource, boolean triggerCooldown) {
-        if (!(ServerConfig.enabled() && ServerConfig.DISABLE_MANA_CONSUMPTION.get() && castSource.consumesMana())) {
+        if (!(ServerConfig.enabled() && ServerConfig.manaDisabled() && castSource.consumesMana())) {
             magicData.setMana(mana);
         }
     }

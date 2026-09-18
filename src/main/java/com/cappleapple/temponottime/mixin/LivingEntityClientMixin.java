@@ -17,7 +17,7 @@ public abstract class LivingEntityClientMixin {
     @Inject(method = "getAttributeValue(Lnet/minecraft/core/Holder;)D", at = @At("HEAD"), cancellable = true)
     private void temponottime$reportMaximumCastingReserve(Holder<Attribute> attribute,
                                                           CallbackInfoReturnable<Double> callback) {
-        if (!ClientCooldownState.manaDisabled()
+        if (!ClientCooldownState.manaDisabled() || ClientCooldownState.snapshot().spellCooldownsOnly()
                 || attribute.value() != AttributeRegistry.MAX_MANA.value()
                 || (Object) this != Minecraft.getInstance().player) {
             return;

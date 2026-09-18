@@ -11,7 +11,7 @@ public final class TempoNetwork {
     }
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(TempoNotTime.MOD_ID).versioned("1.1.0");
+        PayloadRegistrar registrar = event.registrar(TempoNotTime.MOD_ID).versioned("1.3");
         registrar.playToClient(SyncCooldownStatePayload.TYPE, SyncCooldownStatePayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> ClientCooldownState.accept(payload)));
     }

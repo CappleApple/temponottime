@@ -117,7 +117,7 @@ public final class CooldownManager {
     }
 
     public double usedCastingReserve(Player player) {
-        if (!ServerConfig.CAPACITY_ENABLED.get()
+        if (!ServerConfig.capacityEnabled()
                 || (player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CAPACITY.get())) return 0.0;
         PlayerCooldownData data = data(player);
         double used = data.allInstances().stream().filter(CooldownInstance::occupiesCastingReserve)
@@ -130,10 +130,14 @@ public final class CooldownManager {
     }
 
     public double freeCastingReserve(Player player) {
-        return manaCompatibility(player).current();
+        return ManaCompatibilityValues.snapshot(maximumCastingReserve(player), usedCastingReserve(player),
+                ServerConfig.spellCooldownsOnly() ? 0.0 : data(player).castingReserveCredit()).current();
     }
 
     public ManaCompatibilityValues.Snapshot manaCompatibility(Player player) {
+        if (ServerConfig.spellCooldownsOnly()) {
+            return ManaCompatibilityValues.snapshot(player.getAttributeValue(AttributeRegistry.MAX_MANA), 0.0, 0.0);
+        }
         return ManaCompatibilityValues.snapshot(maximumCastingReserve(player), usedCastingReserve(player),
                 data(player).castingReserveCredit());
     }
@@ -145,7 +149,7 @@ public final class CooldownManager {
         double draw = ExternalManaPolicy.castingDraw(manaCost,
                 ServerConfig.MANA_COST_TO_CAPACITY_COST_MULTIPLIER.get());
         boolean bypassesCapacity = player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CAPACITY.get();
-        boolean allowed = ExternalManaPolicy.canAfford(ServerConfig.CAPACITY_ENABLED.get(), bypassesCapacity,
+        boolean allowed = ExternalManaPolicy.canAfford(ServerConfig.capacityEnabled(), bypassesCapacity,
                 maximumCastingReserve(player), usedCastingReserve(player), data(player).castingReserveCredit(), draw,
                 ServerConfig.ALLOW_OVERCAPACITY_SINGLE_CAST.get());
         if (!allowed) {
@@ -161,7 +165,7 @@ public final class CooldownManager {
         }
         double draw = ExternalManaPolicy.castingDraw(manaCost,
                 ServerConfig.MANA_COST_TO_CAPACITY_COST_MULTIPLIER.get());
-        boolean reserveApplies = ServerConfig.CAPACITY_ENABLED.get()
+        boolean reserveApplies = ServerConfig.capacityEnabled()
                 && !(player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CAPACITY.get());
         double reservedDraw = reserveApplies ? data(player).consumeCastingReserveCredit(draw) : draw;
         double duration = ExternalManaPolicy.rechargeDuration(effectiveCooldownTicks,
@@ -172,6 +176,7 @@ public final class CooldownManager {
         String cooldownId = SimplySwordsManaCompatibility.COOLDOWN_PREFIX + source;
         CooldownInstance instance = data(player).add(cooldownId, 1, reservedDraw, duration,
                 false, true, true);
+        instance.setRecoveryManaCost(manaCost);
         if (ServerConfig.DEBUG_LOGGING.get()) {
             TempoNotTime.LOGGER.info("Committed Simply Swords recharge for {}: source={}, castingDraw={}, duration={}",
                     player.getGameProfile().getName(), source, draw, duration);
@@ -201,8 +206,19 @@ public final class CooldownManager {
                 });
     }
 
+    public void restoreInstantMana(ServerPlayer player, double amount) {
+        if (ServerConfig.spellCooldownsOnly()) {
+            PlayerCooldownData data = data(player);
+            if (InstantManaRecovery.apply(data, amount, ServerConfig.RECOVERY_MODE.get())) {
+                sync(player);
+            }
+        } else {
+            rechargeCastingReserve(player, amount);
+        }
+    }
+
     public void rechargeCastingReserve(ServerPlayer player, double amount) {
-        if (!ServerConfig.enabled() || !ServerConfig.CAPACITY_ENABLED.get()
+        if (!ServerConfig.enabled() || !ServerConfig.capacityEnabled()
                 || !Double.isFinite(amount) || amount <= 0.0) return;
         PlayerCooldownData data = data(player);
         data.addCastingReserveCredit(amount, usedCastingReserve(player));
@@ -223,7 +239,7 @@ public final class CooldownManager {
     }
 
     public double loadMultiplier(Player player) {
-        if (!ServerConfig.LOAD_ENABLED.get()) return 1.0;
+        if (ServerConfig.spellCooldownsOnly() || !ServerConfig.LOAD_ENABLED.get()) return 1.0;
         return CooldownLoadCalculator.multiplier(activeCooldownCount(player), ServerConfig.FREE_COOLDOWNS.get(),
                 ServerConfig.PENALTY_PER_ADDITIONAL_COOLDOWN.get(), ServerConfig.MINIMUM_RECOVERY_MULTIPLIER.get());
     }
@@ -249,7 +265,7 @@ public final class CooldownManager {
         }
 
         double cost = castingDraw(player, spell, spellLevel);
-        boolean reserveGate = ServerConfig.CAPACITY_ENABLED.get() && override.occupiesCastingReserve(true)
+        boolean reserveGate = ServerConfig.capacityEnabled() && override.occupiesCastingReserve(true)
                 && !(player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CAPACITY.get());
         if (reserveGate && !CapacityCalculator.canReserve(maximumCastingReserve(player) + data(player).castingReserveCredit(),
                 usedCastingReserve(player), cost,
@@ -292,10 +308,12 @@ public final class CooldownManager {
                 ? pending.appliesLoad()
                 : override.appliesLoad(true);
 
-        boolean reserveApplies = ServerConfig.CAPACITY_ENABLED.get() && reserves
+        boolean reserveApplies = ServerConfig.capacityEnabled() && reserves
                 && !(player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CAPACITY.get());
         double reservedCost = reserveApplies ? data.consumeCastingReserveCredit(cost) : cost;
-        data.add(spell.getSpellId(), spellLevel, reservedCost, duration, true, reserves, appliesLoad);
+        CooldownInstance instance = data.add(spell.getSpellId(), spellLevel, reservedCost, duration, true, reserves, appliesLoad);
+        instance.setRecoveryManaCost(eventManaCost > 0.0 && Double.isFinite(eventManaCost)
+                ? eventManaCost : ServerConfig.ZERO_MANA_SPELL_CAPACITY_COST.get());
         data.setPendingCast(null);
         data.setCommittedCastingSpellId(spell.getSpellId());
         if (ServerConfig.DEBUG_LOGGING.get()) {
@@ -341,7 +359,7 @@ public final class CooldownManager {
         if (!(event.getEntity() instanceof ServerPlayer player) || !ServerConfig.enabled() || !manages(event.getCastSource())) return;
         AbstractSpell spell = SpellRegistry.getSpell(event.getSpellId());
         commitCast(player, spell, event.getSpellLevel(), event.getManaCost(), event.getCastSource());
-        if (ServerConfig.DISABLE_MANA_CONSUMPTION.get()) {
+        if (ServerConfig.manaDisabled()) {
             event.setManaCost(0);
         }
     }
@@ -525,7 +543,7 @@ public final class CooldownManager {
     }
 
     public boolean manaCompatibilityActive() {
-        return ServerConfig.enabled() && ServerConfig.DISABLE_MANA_CONSUMPTION.get();
+        return ServerConfig.enabled() && ServerConfig.manaDisabled();
     }
 
     private static double safeNonNegative(double value) {

@@ -4,6 +4,11 @@ import com.cappleapple.temponottime.casting.ChargeRequirementFormula;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 public final class ServerConfig {
+    public enum CastingMode {
+        CASTING_RESERVE,
+        SPELL_COOLDOWNS
+    }
+
     public enum RecoveryMode {
         PARALLEL,
         SEQUENTIAL
@@ -17,6 +22,7 @@ public final class ServerConfig {
     public static final ModConfigSpec SPEC;
 
     public static final ModConfigSpec.BooleanValue ENABLED;
+    public static final ModConfigSpec.EnumValue<CastingMode> CASTING_MODE;
     public static final ModConfigSpec.BooleanValue CONVERT_MAX_MANA;
     public static final ModConfigSpec.BooleanValue CONVERT_MANA_REGEN;
     public static final ModConfigSpec.BooleanValue DISABLE_MANA_CONSUMPTION;
@@ -61,6 +67,13 @@ public final class ServerConfig {
         builder.push("general");
         ENABLED = builder.comment("Enable Tempo Not Time feature true/false.")
                 .define("enabled", true);
+        CASTING_MODE = builder.comment(
+                        "CASTING_RESERVE keeps the shared reserve system.",
+                        "SPELL_COOLDOWNS uses independent spell charges and recharge timers, hides the mana bar,",
+                        "and disables mana spending, shared reserve limits, and cooldown load regardless of their toggles.",
+                        "Max Mana and Mana Regeneration conversion toggles still control charge scaling and recovery speed.",
+                        "Instant Mana advances each spell's recharge by restored mana / that cast's mana cost.")
+                .defineEnum("casting_mode", CastingMode.CASTING_RESERVE);
         CONVERT_MAX_MANA = builder.comment("Enable Max Mana to Casting Reserve conversion feature true/false.")
                 .define("convert_max_mana_to_casting_reserve", true);
         CONVERT_MANA_REGEN = builder.comment("Enable Mana Regeneration to Casting Regeneration conversion feature true/false.")
@@ -155,6 +168,18 @@ public final class ServerConfig {
     }
 
     private ServerConfig() {
+    }
+
+    public static boolean spellCooldownsOnly() {
+        return enabled() && CASTING_MODE.get() == CastingMode.SPELL_COOLDOWNS;
+    }
+
+    public static boolean manaDisabled() {
+        return enabled() && (spellCooldownsOnly() || DISABLE_MANA_CONSUMPTION.get());
+    }
+
+    public static boolean capacityEnabled() {
+        return !spellCooldownsOnly() && CAPACITY_ENABLED.get();
     }
 
     public static boolean enabled() {

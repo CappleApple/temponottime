@@ -23,7 +23,7 @@ public abstract class MagicDataMixin {
     @Inject(method = "getMana", at = @At("HEAD"), cancellable = true)
     private void temponottime$reportAvailableCastingReserve(CallbackInfoReturnable<Float> callback) {
         if (serverPlayer == null || TEMPONOTTIME$REPORTING_MANA.get()
-                || !ServerConfig.enabled() || !ServerConfig.DISABLE_MANA_CONSUMPTION.get()) {
+                || !ServerConfig.enabled() || !ServerConfig.manaDisabled()) {
             return;
         }
 

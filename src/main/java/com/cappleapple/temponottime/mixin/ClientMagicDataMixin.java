@@ -3,6 +3,8 @@ package com.cappleapple.temponottime.mixin;
 import com.cappleapple.temponottime.casting.ManaCompatibilityValues;
 import com.cappleapple.temponottime.network.ClientCooldownState;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
+import io.redspace.ironsspellbooks.api.registry.AttributeRegistry;
+import net.minecraft.client.Minecraft;
 import io.redspace.ironsspellbooks.player.ClientMagicData;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -17,6 +19,12 @@ public abstract class ClientMagicDataMixin {
             return;
         }
         var snapshot = ClientCooldownState.snapshot();
+        if (snapshot.spellCooldownsOnly()) {
+            var player = Minecraft.getInstance().player;
+            if (player != null) callback.setReturnValue((int) player.getAttributeValue(
+                    AttributeRegistry.MAX_MANA));
+            return;
+        }
         callback.setReturnValue(ManaCompatibilityValues.snapshot(
                 snapshot.maximumCastingReserve(), snapshot.usedCastingReserve(),
                 snapshot.castingReserveCredit()).currentAsInt());

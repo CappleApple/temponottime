@@ -16,7 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled,
+public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled, boolean spellCooldownsOnly,
                                        boolean castingReserveEnabled, boolean chargesEnabled,
                                        boolean convertsMaxMana, boolean convertsManaRegen,
                                        double maximumCastingReserve, double usedCastingReserve,
@@ -33,7 +33,7 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled,
             CustomPacketPayload.codec(SyncCooldownStatePayload::write, SyncCooldownStatePayload::new);
 
     public SyncCooldownStatePayload(FriendlyByteBuf buffer) {
-        this(buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean(),
+        this(buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean(),
                 buffer.readBoolean(), buffer.readBoolean(), buffer.readDouble(), buffer.readDouble(),
                 buffer.readDouble(), buffer.readDouble(), buffer.readVarInt(), buffer.readBoolean(),
                 buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), buffer.readDouble(), readSpells(buffer));
@@ -42,6 +42,7 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled,
     public void write(FriendlyByteBuf buffer) {
         buffer.writeBoolean(enabled);
         buffer.writeBoolean(manaDisabled);
+        buffer.writeBoolean(spellCooldownsOnly);
         buffer.writeBoolean(castingReserveEnabled);
         buffer.writeBoolean(chargesEnabled);
         buffer.writeBoolean(convertsMaxMana);
@@ -80,8 +81,8 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled,
             int level = instances.isEmpty() ? 1 : instances.getFirst().spellLevel();
             spellStates.put(id, createSpellState(player, id, level));
         });
-        return new SyncCooldownStatePayload(ServerConfig.enabled(), ServerConfig.DISABLE_MANA_CONSUMPTION.get(),
-                ServerConfig.CAPACITY_ENABLED.get(), ServerConfig.CHARGES_ENABLED.get(),
+        return new SyncCooldownStatePayload(ServerConfig.enabled(), ServerConfig.manaDisabled(), ServerConfig.spellCooldownsOnly(),
+                ServerConfig.capacityEnabled(), ServerConfig.CHARGES_ENABLED.get(),
                 ServerConfig.CONVERT_MAX_MANA.get(), ServerConfig.CONVERT_MANA_REGEN.get(),
                 manager.maximumCastingReserve(player), manager.usedCastingReserve(player),
                 manager.data(player).castingReserveCredit(), manager.recoveryMultiplier(player),
@@ -92,7 +93,7 @@ public record SyncCooldownStatePayload(boolean enabled, boolean manaDisabled,
     }
 
     public static SyncCooldownStatePayload empty() {
-        return new SyncCooldownStatePayload(false, false, false, false, false, false,
+        return new SyncCooldownStatePayload(false, false, false, false, false, false, false,
                 0.0, 0.0, 0.0, 1.0, 0, false, 10.0, 0.8, 0.5, 8.0, Map.of());
     }
 

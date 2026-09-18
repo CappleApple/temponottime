@@ -1,13 +1,9 @@
 {
   "attribute.temponottime.casting_reserve": "Casting Reserve",
-  "attribute.temponottime.charge_capacity": "Charge Capacity",
-  "attribute.temponottime.casting_regeneration": "Casting Regeneration",
   "gui.temponottime.only_show_bound_quick_cast_slots": "Only show bound quick cast slots: %s",
   "message.temponottime.not_enough_reserve": "Not enough Casting Reserve",
   "message.temponottime.no_charges": "That spell has no charges available",
   "message.temponottime.reservation_denied": "That spell's Casting Reserve reservation was denied",
-  "tooltip.temponottime.casting_draw": " %s Casting Draw",
-  "tooltip.temponottime.casting_draw_per_second": " %s Casting Draw/s",
   "command.temponottime.info": "Casting Reserve %s max, %s occupied, %s free; %s active recharges; %sx Casting Recovery",
   "command.temponottime.reserve": "%s / %s Casting Reserve occupied; %s free",
   "command.temponottime.cooldowns.header": "%s active recharge instance(s)",

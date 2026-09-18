@@ -5,7 +5,6 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "AbstractSpellMixin",
-    "AttributeMixin",
     "InstantManaEffectMixin",
     "ItemCooldownsMixin",
     "MagicDataMixin",

@@ -2,24 +2,39 @@
 
 Tempo Not Time is an addon for Iron's Spells 'n Spellbooks that turns mana into a cooldown-focused casting system.
 
-Instead of spending mana and waiting for a bar to refill, spells occupy part of your **Casting Reserve** while they recover. Iron's normal spell costs, cooldowns, gear bonuses, and addon content still matter; Tempo just gives those numbers a different job.
+Choose independent spell charges and cooldowns, or keep the shared **Casting Reserve** system. Iron's normal spell costs, cooldowns, gear bonuses, and addon content still matter; Tempo just gives those numbers a different job.
 
 Built for Minecraft 1.21.1 / NeoForge.
 
-## The basic idea
+## Casting modes
 
-Iron's existing stats are reused rather than replaced with a second parallel set:
+Set `general.casting_mode` in `config/temponottime-server.toml` and restart the server or world:
 
-```text
-Max Mana         -> Casting Reserve
-Mana Regen       -> Casting Regeneration
-Spell Mana Cost  -> Casting Draw
-Spell Cooldown   -> Recharge Duration
+```toml
+[general]
+    enabled = true
+    casting_mode = "SPELL_COOLDOWNS"
 ```
 
-If a spell has 60 Casting Draw and you have 300 Casting Reserve, casting it temporarily occupies 60 reserve until that cast recovers. Other spells can use whatever reserve is still free.
+Edit the existing `[general]` section rather than adding a second one.
 
-This makes spellcasting feel closer to managing a loadout of recovering abilities than managing a mana potion bar.
+| Mode | Behavior |
+| --- | --- |
+| `CASTING_RESERVE` (default) | Recovering casts occupy a shared reserve. Existing settings continue to apply. |
+| `SPELL_COOLDOWNS` | Each spell has its own charges and recharge queue. No shared reserve limit or mana spending; the mana bar is hidden. |
+
+In `SPELL_COOLDOWNS` mode:
+
+- Max Mana determines charge counts through the existing charge formula when `general.convert_max_mana_to_casting_reserve` is enabled.
+- Mana Regeneration speeds recharge when `general.convert_mana_regeneration_to_casting_regeneration` is enabled. Cooldown Reduction still affects each spell's duration.
+- Mana spending, shared reserve limits, and cooldown load are bypassed even if their individual settings say otherwise. Casting one spell does not slow or block another.
+- `charges.enabled`, charge limits, sequential/parallel recovery, recharge normalization, and applicable per-spell overrides still work. Disabling charges gives each spell one use followed by its cooldown.
+- Mana potions and other applications of Iron's Instant Mana effect advance currently recovering spell charges. Each spell receives `restored mana / that cast's mana cost` of a full charge's recharge time. For example, restoring 20 mana advances a 40-mana, 10-second charge by 5 seconds.
+- Sequential recovery spends the dose on the oldest recovering charge, carrying unused recovery into that spell's next charge. Parallel recovery applies the dose to every recovering charge. Excess recovery is discarded; active recasts and unfinished casts are unaffected until their cooldown starts.
+
+Iron's original attribute identities and names remain unchanged in both modes. The existing conversion settings change their gameplay role without relabeling them. The mod's own `temponottime:casting_reserve` attribute retains its name and can also contribute to charge scaling.
+
+In shared-reserve mode, a spell with 60 Casting Draw occupies 60 of your Casting Reserve until that cast recovers. With 300 reserve, other spells can use the remaining 240. Instant Mana restores available reserve in this mode.
 
 ## Spell charges
 
@@ -40,7 +55,7 @@ Iron's recast spells still use their normal follow-up behavior. The initial cast
 
 ## Cooldown load
 
-Recovering too many things at once can slow your overall recovery rate.
+In shared-reserve mode, recovering too many things at once can slow your overall recovery rate. `SPELL_COOLDOWNS` bypasses this penalty.
 
 You can configure how many active cooldowns are free, how strongly extra cooldowns affect recovery, the minimum recovery speed, and whether multiple spent charges count separately.
 
@@ -58,9 +73,8 @@ Tempo reuses Iron's existing spell and mana UI instead of replacing it with a se
 
 While the mod is active:
 
-- the mana bar displays available Casting Reserve;
-- mana cost text becomes Casting Draw;
-- mana regeneration is presented as Casting Regeneration;
+- the mana bar displays available Casting Reserve in mana-free `CASTING_RESERVE` mode and is hidden in `SPELL_COOLDOWNS` mode;
+- Max Mana, Mana Regeneration, and Mana Cost keep their original labels;
 - spell slots show remaining charges when a spell has more than one;
 - cooldown shading tracks the next returning charge; and
 - scroll tooltips show the normalized recharge duration.
@@ -101,7 +115,7 @@ Tempo uses Iron's real spell definitions, costs, cooldowns, attributes, equipmen
 
 Scrolls and mob casting keep Iron's normal behavior.
 
-Simply Swords is optional. When installed, its Iron's-compatible weapon mana costs can use Casting Reserve and its effective item cooldown can become Tempo recharge debt. See [the Simply Swords notes](docs/SIMPLY_SWORDS_INTEGRATION.md) for the exact behavior.
+Simply Swords is optional. When installed, its Iron's-compatible weapon mana costs can use Casting Reserve and its effective item cooldown can become Tempo recharge debt. In `SPELL_COOLDOWNS` mode, weapon abilities bypass mana/reserve costs but retain Simply Swords' native item cooldowns; Instant Mana only accelerates Iron's spell charges. See [the Simply Swords notes](docs/SIMPLY_SWORDS_INTEGRATION.md) for the exact behavior.
 
 The Iron's integration points are documented in [docs/IRONS_INTEGRATION.md](docs/IRONS_INTEGRATION.md) for maintainers and addon authors.
 
@@ -138,8 +152,14 @@ The public API exposes Casting Reserve, Casting Draw, spell charges, recovery st
 .\gradlew.bat test build
 ```
 
+Run the headless server integration test with:
+
+```powershell
+.\gradlew.bat runGameTestServer
+```
+
 Built jars are written to `build/libs/`.
 
 ## License
 
-Tempo Not Time is available under the MIT License.
+Tempo Not Time is available under the [MIT License](LICENSE).

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3 - 2026-09-17
+
+### Added
+
+- Added `SPELL_COOLDOWNS` mode: Max Mana scales each spell's charges and Mana Regeneration speeds recharge, without shared reserve limits, mana spending, cooldown-load penalties, or a mana bar.
+- Mana potions and other Instant Mana applications advance active spell cooldowns in the new mode based on restored mana and each cast's mana cost, carrying excess recovery into the next spent charge during sequential recovery.
+
+### Changed
+
+- Max Mana, Mana Regeneration, and Mana Cost retain Iron's original names while enabled conversions still change their function.
+
 ## 1.2.6 - 2026-08-26
 
 ### Added
