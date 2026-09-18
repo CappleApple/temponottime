@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.1 - 2026-09-18
+
+### Added
+
+- Added default-on `casting_reserve.prorated_mana_regen`: shared reserve returns every 10 ticks in proportion to each charge's cooldown progress.
+
+### Changed
+
+- In `SPELL_COOLDOWNS` mode, Max Mana displays as Charge Capacity and spell Mana Cost displays as Charge Cost. Other modes keep the original names.
+- Spells costing more than the player's Charge Capacity have longer cooldowns in `SPELL_COOLDOWNS` mode. The increase is the missing fraction of the spell's cost: 50 capacity against 100 cost adds 50%, up to a 100% increase at zero capacity.
+- Spell cooldown previews in `SPELL_COOLDOWNS` include the current capacity shortfall penalty.
+
 ## 1.3 - 2026-09-17
 
 ### Added

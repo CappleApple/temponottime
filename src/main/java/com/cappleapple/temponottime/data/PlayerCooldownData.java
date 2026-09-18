@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 public final class PlayerCooldownData {
-    public static final int DATA_VERSION = 3;
+    public static final int DATA_VERSION = 4;
 
     private final Map<String, List<CooldownInstance>> cooldowns = new LinkedHashMap<>();
     private long nextId = 1;

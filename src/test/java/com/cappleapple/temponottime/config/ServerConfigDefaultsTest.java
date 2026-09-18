@@ -6,6 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ServerConfigDefaultsTest {
     @Test
+    void proratedManaRegenDefaultsOn() {
+        assertEquals(true, ServerConfig.PRORATED_MANA_REGEN.getDefault());
+    }
+
+    @Test
     void existingWorldsKeepReserveModeByDefault() {
         assertEquals(ServerConfig.CastingMode.CASTING_RESERVE, ServerConfig.CASTING_MODE.getDefault());
     }

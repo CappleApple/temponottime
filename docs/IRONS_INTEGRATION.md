@@ -73,14 +73,19 @@ In `SPELL_COOLDOWNS` mode it skips the native write and advances each spell's ac
 
 Both potion applications and `applyEffectTick` reach this hook. Disabling Tempo preserves the original write without adding credit or advancing cooldowns.
 
+### `AttributeMixin`
+
+In `SPELL_COOLDOWNS` mode, `Attribute.getDescriptionId` returns `attribute.temponottime.charge_capacity` for Iron's Max Mana attribute. This covers normal attribute localization, including equipment modifier tooltips. The server uses its configured mode and the client uses the synchronized mode. Other attributes and other modes retain their original description IDs.
+
 ### Client display hooks
 
 The client hooks reuse Iron's own HUD layout rather than drawing a second spell interface:
 
 - the mana overlay displays available Casting Reserve in mana-free shared-reserve mode and is hidden in `SPELL_COOLDOWNS` mode;
 - the spell bar displays Tempo charge counts and recovery state;
-- mana-cost text and attribute description IDs keep their original names; and
-- cooldown tooltip values use the synchronized normalization settings.
+- `TooltipsUtilsMixin` labels spell mana costs as Charge Cost in `SPELL_COOLDOWNS`, preserving Iron's continuous-cast per-second conversion;
+- other modes retain the original mana-cost components; and
+- cooldown tooltip values use the synchronized normalization settings, with the current capacity shortfall penalty included for scroll and active-spell previews in `SPELL_COOLDOWNS`. Previews use the spell's displayed mana cost; server-only cast-event cost changes can differ.
 
 Third-party HUDs receive full native Max Mana in `SPELL_COOLDOWNS` mode but may still choose to draw their own mana bar. Only the shared-reserve mode projects Casting Reserve into client Max Mana queries.
 
@@ -89,6 +94,14 @@ Third-party HUDs receive full native Max Mana in `SPELL_COOLDOWNS` mode but may 
 Iron's `getSpellCooldown` supplies the spell's normal base cooldown. Tempo can normalize that base, then preserves the ratio introduced by Iron's effective cooldown calculation and cooldown events.
 
 That is important for compatibility: equipment and addons that modify Iron's cooldown still modify the final Tempo recharge instead of being silently discarded.
+
+In `SPELL_COOLDOWNS`, a successful cast captures the multiplier `1 + clamp((manaCost - maxMana) / manaCost, 0, 1)`. Zero-cost spells have no penalty. These are Iron's effective Max Mana and the successful cast event's mana cost, independent of reserve-cost multipliers and reserve credit. The penalty is applied after normalization and per-spell cooldown scaling, and retained when Iron's final cooldown event activates the charge. Equipment changes after the cast do not change that charge's captured multiplier. Existing saved charges without a multiplier keep their previous durations.
+
+## Prorated reserve recovery
+
+With `casting_reserve.prorated_mana_regen = true` (the default), player ticks sample each charge's actual cooldown progress every 10 ticks in `CASTING_RESERVE` mode. Occupied reserve becomes `reservedCost * (1 - sampledProgressFraction)`. Pending and waiting casts keep their full reservation; queued sequential charges release nothing until their own progress advances.
+
+This changes authoritative affordability and the existing mana/HUD compatibility snapshot together. It does not add potion credit or write Iron's backing mana. A cast paid partly by potion credit only releases its remaining reserved cost, and removing a completed charge releases only the occupancy left over. Disabling the option restores the full-cost-until-completion rule. If native mana spending is explicitly enabled, its backing mana and ordinary regeneration remain separate from this reserve calculation.
 
 ## State ownership
 
@@ -103,6 +116,8 @@ When debugging an integration, the useful distinction is:
 
 `general.casting_mode` defaults to `CASTING_RESERVE`. `SPELL_COOLDOWNS` forces mana-free casting and bypasses reserve and load gates while honoring the charge and attribute-conversion toggles. Scrolls and mobs remain outside Tempo's managed spellbook/sword cast sources.
 
-Cooldown data version 3 stores `recovery_mana_cost` separately from occupied reserve. Existing version-2 instances fall back to their saved Casting Draw, with a minimum cost of 1; their original raw mana cost cannot be recovered. New casts preserve raw mana cost even if reserve credit covers their entire cost. Charge progress continues to use the existing save, logout, dimension-change, and death policies.
+Cooldown data version 4 additionally stores the captured `cooldown_penalty_multiplier` and sampled `reserve_recovered_fraction`. Older saves default to no penalty and sample existing progress on the next ten-tick interval.
+
+As in version 3, cooldown data stores `recovery_mana_cost` separately from occupied reserve. Existing version-2 instances fall back to their saved Casting Draw, with a minimum cost of 1; their original raw mana cost cannot be recovered. New casts preserve raw mana cost even if reserve credit covers their entire cost. Charge progress continues to use the existing save, logout, dimension-change, and death policies.
 
 The server synchronizes the effective mode and mana/reserve flags. Network protocol `1.3` requires matching clients and server. Third-party HUDs may still choose to draw their own full mana bar; Tempo directly hides Iron's native overlay.

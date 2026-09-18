@@ -31,6 +31,7 @@ public final class ServerConfig {
     public static final ModConfigSpec.BooleanValue CREATIVE_BYPASSES_CHARGES;
 
     public static final ModConfigSpec.BooleanValue CAPACITY_ENABLED;
+    public static final ModConfigSpec.BooleanValue PRORATED_MANA_REGEN;
     public static final ModConfigSpec.DoubleValue MAX_MANA_TO_CAPACITY_MULTIPLIER;
     public static final ModConfigSpec.DoubleValue MANA_COST_TO_CAPACITY_COST_MULTIPLIER;
     public static final ModConfigSpec.DoubleValue MINIMUM_CAPACITY;
@@ -91,6 +92,11 @@ public final class ServerConfig {
         builder.push("casting_reserve");
         CAPACITY_ENABLED = builder.comment("Enable casting reserve feature true/false.")
                 .define("enabled", true);
+        PRORATED_MANA_REGEN = builder.comment(
+                        "Return occupied Casting Reserve in proportion to charge cooldown progress every 10 ticks.",
+                        "Only applies in CASTING_RESERVE mode. False keeps the full cost occupied until recharge completes.",
+                        "Pending casts and charges that have not started recovering keep their full cost.")
+                .define("prorated_mana_regen", true);
         MAX_MANA_TO_CAPACITY_MULTIPLIER = builder.comment("Multiplier applied to effective Iron's Max Mana when calculating Casting Reserve.")
                 .defineInRange("max_mana_to_casting_reserve_multiplier", 1.0, 0.0, 1000.0);
         MANA_COST_TO_CAPACITY_COST_MULTIPLIER = builder.comment("Multiplier applied to effective spell mana cost when calculating Casting Draw.")
@@ -176,6 +182,10 @@ public final class ServerConfig {
 
     public static boolean manaDisabled() {
         return enabled() && (spellCooldownsOnly() || DISABLE_MANA_CONSUMPTION.get());
+    }
+
+    public static boolean proratedManaRegen() {
+        return enabled() && !spellCooldownsOnly() && CAPACITY_ENABLED.get() && PRORATED_MANA_REGEN.get();
     }
 
     public static boolean capacityEnabled() {

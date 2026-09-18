@@ -25,16 +25,21 @@ Edit the existing `[general]` section rather than adding a second one.
 
 In `SPELL_COOLDOWNS` mode:
 
-- Max Mana determines charge counts through the existing charge formula when `general.convert_max_mana_to_casting_reserve` is enabled.
+- Max Mana is displayed as **Charge Capacity**, and spell Mana Cost as **Charge Cost**. Charge Capacity determines charge counts through the existing charge formula when `general.convert_max_mana_to_casting_reserve` is enabled.
+- When Charge Capacity is below a spell's Charge Cost, its cooldown is increased by `(cost - capacity) / cost`. For example, 50 capacity against 100 cost makes a 10-second cooldown take 15 seconds. Zero capacity doubles the cooldown; capacity at or above the cost adds no penalty. The comparison uses Iron's Max Mana and the cast's mana cost, before reserve-specific scaling or credit.
 - Mana Regeneration speeds recharge when `general.convert_mana_regeneration_to_casting_regeneration` is enabled. Cooldown Reduction still affects each spell's duration.
 - Mana spending, shared reserve limits, and cooldown load are bypassed even if their individual settings say otherwise. Casting one spell does not slow or block another.
 - `charges.enabled`, charge limits, sequential/parallel recovery, recharge normalization, and applicable per-spell overrides still work. Disabling charges gives each spell one use followed by its cooldown.
 - Mana potions and other applications of Iron's Instant Mana effect advance currently recovering spell charges. Each spell receives `restored mana / that cast's mana cost` of a full charge's recharge time. For example, restoring 20 mana advances a 40-mana, 10-second charge by 5 seconds.
 - Sequential recovery spends the dose on the oldest recovering charge, carrying unused recovery into that spell's next charge. Parallel recovery applies the dose to every recovering charge. Excess recovery is discarded; active recasts and unfinished casts are unaffected until their cooldown starts.
 
-Iron's original attribute identities and names remain unchanged in both modes. The existing conversion settings change their gameplay role without relabeling them. The mod's own `temponottime:casting_reserve` attribute retains its name and can also contribute to charge scaling.
+Iron's attribute identities remain unchanged. `CASTING_RESERVE` keeps the original Max Mana and Mana Cost labels; Mana Regeneration keeps its original name in both modes. The mod's own `temponottime:casting_reserve` attribute retains its name and can also contribute to charge scaling.
 
-In shared-reserve mode, a spell with 60 Casting Draw occupies 60 of your Casting Reserve until that cast recovers. With 300 reserve, other spells can use the remaining 240. Instant Mana restores available reserve in this mode.
+In shared-reserve mode, a spell with 60 Casting Draw initially occupies 60 of your Casting Reserve. With 300 reserve, other spells can use the remaining 240. Instant Mana restores available reserve in this mode.
+
+`casting_reserve.prorated_mana_regen` defaults to `true`. Every 10 ticks, occupied reserve decreases in proportion to each charge's cooldown progress. A 40-cost charge halfway through its cooldown occupies 20 reserve, so the bar gradually refills and that reserve can fund other casts. Pending casts and charges waiting to recover keep their full cost. Sequential recovery only refunds the charge currently progressing; parallel recovery refunds each progressing charge.
+
+Set `prorated_mana_regen = false` in the existing `[casting_reserve]` section to keep the full cost occupied until recharge completes. This setting only changes the shared-reserve economy; it does not enable ordinary mana regeneration when mana-free casting is selected.
 
 ## Spell charges
 
@@ -74,10 +79,10 @@ Tempo reuses Iron's existing spell and mana UI instead of replacing it with a se
 While the mod is active:
 
 - the mana bar displays available Casting Reserve in mana-free `CASTING_RESERVE` mode and is hidden in `SPELL_COOLDOWNS` mode;
-- Max Mana, Mana Regeneration, and Mana Cost keep their original labels;
+- Max Mana and Mana Cost display as Charge Capacity and Charge Cost in `SPELL_COOLDOWNS`, and retain their original labels in `CASTING_RESERVE`;
 - spell slots show remaining charges when a spell has more than one;
 - cooldown shading tracks the next returning charge; and
-- scroll tooltips show the normalized recharge duration.
+- scroll tooltips show the normalized recharge duration; in `SPELL_COOLDOWNS`, scroll and active-spell cooldown previews also include the current capacity shortfall penalty.
 
 There is also an optional setting to hide unbound quick-cast slots without changing their actual quick-cast indices. The toggle is available from the inscription table.
 

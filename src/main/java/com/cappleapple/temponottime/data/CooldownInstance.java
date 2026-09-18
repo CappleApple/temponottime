@@ -10,6 +10,8 @@ public final class CooldownInstance {
     private final boolean occupiesCastingReserve;
     private final boolean appliesLoad;
     private double recoveryManaCost;
+    private double cooldownPenaltyMultiplier = 1.0;
+    private double reserveRecoveredFraction;
     private double durationTicks;
     private double progressTicks;
     private boolean waitingForIronCooldown;
@@ -37,6 +39,23 @@ public final class CooldownInstance {
     public void setRecoveryManaCost(double manaCost) {
         recoveryManaCost = Double.isFinite(manaCost) && manaCost > 0.0 ? manaCost : 1.0;
     }
+    public double cooldownPenaltyMultiplier() { return cooldownPenaltyMultiplier; }
+    public void setCooldownPenaltyMultiplier(double multiplier) {
+        cooldownPenaltyMultiplier = Double.isFinite(multiplier) ? Math.clamp(multiplier, 1.0, 2.0) : 1.0;
+    }
+
+    /** Sample actual cooldown progress on the server's ten-tick reserve regeneration interval. */
+    public boolean updateProratedReserve() {
+        double recovered = waitingForIronCooldown ? 0.0 : 1.0 - remainingFraction();
+        boolean changed = recovered != reserveRecoveredFraction;
+        reserveRecoveredFraction = recovered;
+        return changed;
+    }
+
+    public double occupiedReserve(boolean prorated) {
+        return castingDraw * (prorated && !waitingForIronCooldown ? 1.0 - reserveRecoveredFraction : 1.0);
+    }
+
     public double progressTicks() { return progressTicks; }
     public boolean waitingForIronCooldown() { return waitingForIronCooldown; }
     public boolean occupiesCastingReserve() { return occupiesCastingReserve; }
@@ -45,6 +64,7 @@ public final class CooldownInstance {
     public void activate(double effectiveDurationTicks) {
         durationTicks = safeDuration(effectiveDurationTicks);
         progressTicks = 0.0;
+        reserveRecoveredFraction = 0.0;
         waitingForIronCooldown = false;
     }
 
@@ -71,6 +91,8 @@ public final class CooldownInstance {
         tag.putDouble("cost", castingDraw);
         tag.putDouble("duration", durationTicks);
         tag.putDouble("recovery_mana_cost", recoveryManaCost);
+        tag.putDouble("cooldown_penalty_multiplier", cooldownPenaltyMultiplier);
+        tag.putDouble("reserve_recovered_fraction", reserveRecoveredFraction);
         tag.putDouble("progress", progressTicks);
         tag.putBoolean("waiting", waitingForIronCooldown);
         tag.putBoolean("reserves", occupiesCastingReserve);
@@ -83,6 +105,9 @@ public final class CooldownInstance {
                 tag.getDouble("cost"), tag.getDouble("duration"), tag.getDouble("progress"),
                 tag.getBoolean("waiting"), tag.getBoolean("reserves"), tag.getBoolean("load"));
         if (tag.contains("recovery_mana_cost")) instance.setRecoveryManaCost(tag.getDouble("recovery_mana_cost"));
+        if (tag.contains("cooldown_penalty_multiplier")) instance.setCooldownPenaltyMultiplier(tag.getDouble("cooldown_penalty_multiplier"));
+        double recovered = tag.getDouble("reserve_recovered_fraction");
+        instance.reserveRecoveredFraction = Double.isFinite(recovered) ? Math.clamp(recovered, 0.0, 1.0) : 0.0;
         return instance;
     }
 

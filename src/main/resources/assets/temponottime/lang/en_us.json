@@ -1,5 +1,8 @@
 {
   "attribute.temponottime.casting_reserve": "Casting Reserve",
+  "attribute.temponottime.charge_capacity": "Charge Capacity",
+  "tooltip.temponottime.charge_cost": " %s Charge Cost",
+  "tooltip.temponottime.charge_cost_per_second": " %s Charge Cost/s",
   "gui.temponottime.only_show_bound_quick_cast_slots": "Only show bound quick cast slots: %s",
   "message.temponottime.not_enough_reserve": "Not enough Casting Reserve",
   "message.temponottime.no_charges": "That spell has no charges available",

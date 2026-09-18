@@ -121,7 +121,7 @@ public final class CooldownManager {
                 || (player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CAPACITY.get())) return 0.0;
         PlayerCooldownData data = data(player);
         double used = data.allInstances().stream().filter(CooldownInstance::occupiesCastingReserve)
-                .mapToDouble(CooldownInstance::castingDraw).sum();
+                .mapToDouble(instance -> instance.occupiedReserve(ServerConfig.proratedManaRegen())).sum();
         PendingCast pending = data.pendingCast();
         if (pending != null && pending.occupiesCastingReserve()) {
             used += pending.castingDraw();
@@ -282,7 +282,7 @@ public final class CooldownManager {
         SpellOverride override = SpellOverrideManager.get(spell.getSpellId());
         double cost = castingDraw(player, spell, spellLevel);
         double duration = rechargeDuration(spell, MagicManager.getEffectiveSpellCooldown(spell, player, castSource),
-                override.cooldownMultiplier());
+                override.cooldownMultiplier()) * chargeCooldownMultiplier(player, spell.getManaCost(spellLevel));
         boolean reserves = override.occupiesCastingReserve(true);
         boolean appliesLoad = override.appliesLoad(true);
         data(player).setPendingCast(new PendingCast(spell.getSpellId(), spellLevel, cost, duration, reserves, appliesLoad));
@@ -299,8 +299,9 @@ public final class CooldownManager {
         PendingCast pending = data.pendingCast();
         SpellOverride override = SpellOverrideManager.get(spell.getSpellId());
         double cost = castingDraw(player, spell, spellLevel, eventManaCost);
+        double penalty = chargeCooldownMultiplier(player, eventManaCost);
         double duration = rechargeDuration(spell, MagicManager.getEffectiveSpellCooldown(spell, player, castSource),
-                override.cooldownMultiplier());
+                override.cooldownMultiplier()) * penalty;
         boolean reserves = pending != null && pending.spellId().equals(spell.getSpellId())
                 ? pending.occupiesCastingReserve()
                 : override.occupiesCastingReserve(true);
@@ -312,6 +313,7 @@ public final class CooldownManager {
                 && !(player.isCreative() && ServerConfig.CREATIVE_BYPASSES_CAPACITY.get());
         double reservedCost = reserveApplies ? data.consumeCastingReserveCredit(cost) : cost;
         CooldownInstance instance = data.add(spell.getSpellId(), spellLevel, reservedCost, duration, true, reserves, appliesLoad);
+        instance.setCooldownPenaltyMultiplier(penalty);
         instance.setRecoveryManaCost(eventManaCost > 0.0 && Double.isFinite(eventManaCost)
                 ? eventManaCost : ServerConfig.ZERO_MANA_SPELL_CAPACITY_COST.get());
         data.setPendingCast(null);
@@ -328,10 +330,17 @@ public final class CooldownManager {
                 .filter(CooldownInstance::waitingForIronCooldown)
                 .min(Comparator.comparingLong(CooldownInstance::id))
                 .ifPresent(instance -> {
-                    instance.activate(rechargeDuration(spell, effectiveDuration, override.cooldownMultiplier()));
+                    instance.activate(rechargeDuration(spell, effectiveDuration, override.cooldownMultiplier())
+                            * instance.cooldownPenaltyMultiplier());
                     data(player).markDirty();
                     sync(player);
                 });
+    }
+
+    private static double chargeCooldownMultiplier(Player player, double manaCost) {
+        return ServerConfig.spellCooldownsOnly()
+                ? ChargeCooldownPenalty.multiplier(player.getAttributeValue(AttributeRegistry.MAX_MANA), manaCost)
+                : 1.0;
     }
 
     private static double rechargeDuration(AbstractSpell spell, double effectiveDurationTicks, double overrideMultiplier) {
@@ -394,6 +403,11 @@ public final class CooldownManager {
         reconcileChargeMode(data);
         activateOrphanedWaitingInstances(player, data, magicData);
         boolean completed = advanceCooldowns(player, data);
+        if (ServerConfig.proratedManaRegen() && player.tickCount % MagicManager.MANA_REGEN_TICKS == 0) {
+            for (CooldownInstance instance : data.allInstances()) {
+                if (instance.updateProratedReserve()) data.markDirty();
+            }
+        }
         boolean manaCompatibilityChanged = player.tickCount % MANA_COMPATIBILITY_SYNC_INTERVAL == 0
                 && manaCompatibilityChanged(player);
 
