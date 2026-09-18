@@ -1,6 +1,6 @@
 modLoader="javafml"
 loaderVersion="${loader_version_range}"
-license="${mod_license}"
+license="CC BY-NC-SA 4.0 with Modpack/Server Exception"
 
 [[mods]]
 modId="${mod_id}"
